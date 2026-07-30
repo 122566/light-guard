@@ -1,0 +1,30 @@
+repair_now:
+  name: 立即修复
+  description: 对指定回路立即执行断电重启恢复（不受时间窗限制）
+  fields:
+    circuit_id:
+      name: 回路 ID
+      description: 要修复的回路 ID
+      required: true
+      selector:
+        text:
+
+apply_power_on:
+  name: 批量设置上电状态
+  description: 对所有已识别灯具批量设置断电恢复后行为
+  fields:
+    target_label:
+      name: 目标模式
+      description: 断电记忆 / 来电开灯 / 来电关灯
+      required: true
+      default: 断电记忆
+      selector:
+        select:
+          options:
+            - 断电记忆
+            - 来电开灯
+            - 来电关灯
+
+rescan_devices:
+  name: 重新扫描设备
+  description: 重新执行设备自动识别与分类（保留人工裁定）

@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mesh Guard 灯具守护",
+        "description": "米家 BLE Mesh 灯具掉线自愈。本机识别码：**{fingerprint}**\\n\\n请将此识别码发给卖家，换取绑定本机的一次性授权码（一机一码，激活后永久有效）。站点名称用于告警标识；企业微信机器人 webhook 可选（之后也可在面板中配置）。",
+        "data": {
+          "activation_code": "授权码",
+          "site_name": "站点名称",
+          "wework_webhook": "企业微信机器人 Webhook"
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "授权码无效或不属于本机，请核对后重新输入（注意识别码不要抄错）"
+    },
+    "abort": {
+      "single_instance_allowed": "Mesh Guard 只支持单实例。",
+      "missing_xiaomi_home": "未检测到 Xiaomi Home（xiaomi_home）集成。\\n\\n灯具守护需要通过 Xiaomi Home 接入米家设备，请先安装并登录：\\n1. 打开 HACS（极速版），搜索安装「Xiaomi Home」；\\n2. 在 设置 → 集成 中添加 Xiaomi Home 并登录米家账号（选择中枢网关所在家庭）；\\n3. 等设备同步完成后，再回来添加本集成。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "site_name": "站点名称",
+          "wework_webhook": "企业微信机器人 Webhook"
+        }
+      }
+    }
+  }
+}
