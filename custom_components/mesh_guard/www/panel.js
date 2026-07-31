@@ -722,7 +722,7 @@ class MeshGuardPanel extends HTMLElement {
           if (!ev) return;
           if (ev.scheduler) { this._scheduler = ev.scheduler; }
           if (ev.tasks) this._syncTasks(ev.tasks);
-          this._render();
+          this._maybeRender();
         },
         { type: `${DOMAIN}/subscribe` }
       ).then((unsub) => { this._unsub = unsub; }).catch(() => {});
@@ -730,10 +730,20 @@ class MeshGuardPanel extends HTMLElement {
   }
 
   _toastMsg(msg, kind) {
-    this._toast = { msg, kind: kind || "" };
-    this._render();
+    // 纯 DOM 挂载/更新 toast，不触发整页重绘（消灭闪烁）
     clearTimeout(this._tt);
-    this._tt = setTimeout(() => { this._toast = null; this._render(); }, 2800);
+    let el = this.shadowRoot.querySelector(":scope > .toast");
+    if (!el) { el = document.createElement("div"); this.shadowRoot.appendChild(el); }
+    el.className = `toast ${kind || ""}`;
+    el.innerHTML = `${kind === "ok" ? I.check : kind === "err" ? I.alert : ""}${esc(msg)}`;
+    this._tt = setTimeout(() => { el.remove(); }, 2800);
+  }
+
+  _maybeRender() {
+    // 弹层（向导/配方/分类管理/确认框/流水）打开期间，推送仅静默更新数据；
+    // 弹层关闭时各 close 路径会立即 _render，自然应用最新数据。
+    if (this._wiz || this._prof || this._clsMgr || this._cf || this._log) { this._dirty = true; return; }
+    this._render();
   }
 
   _confirm({ title, body, okText = "确认", danger = false, hideCancel = false }) {
@@ -800,7 +810,6 @@ class MeshGuardPanel extends HTMLElement {
       <nav class="bnav">${TABS.map(([id, , slb, icon]) =>
         `<button data-tab="${id}" class="${this._tab === id ? "on" : ""}">${icon}<span>${slb}</span></button>`).join("")}
       </nav>
-      ${this._toast ? `<div class="toast ${this._toast.kind}">${this._toast.kind === "ok" ? I.check : this._toast.kind === "err" ? I.alert : ""}${esc(this._toast.msg)}</div>` : ""}
       ${this._wiz ? this._wizardSheet() : ""}
       ${this._log ? this._logSheet() : ""}
       ${this._clsMgr ? this._clsMgrSheet() : ""}
@@ -877,17 +886,7 @@ class MeshGuardPanel extends HTMLElement {
           <span style="font-weight:600;font-size:14px">${esc(sch.next_window || "-")}</span>
         </div>
       </div>
-      <button class="gt${this._collapsed["dash-ckts"] ? " closed" : ""}" data-act="fold" data-id="dash-ckts">
-        <span>回路状态</span><span class="cnt">${circuits.length}</span><span class="chev">${I.chevD}</span>
-      </button>
-      ${this._collapsed["dash-ckts"] ? this._cktsSummary(circuits, states) :
-        circuits.length ? circuits.map((c) => this._circuitCard(c, states[c.id], "dash")).join("") : `
-        <div class="card empty">
-          <div class="eic">${I.link}</div>
-          <h4>还没有供电回路</h4>
-          <p>前往「接线映射」，把灯具指派给控制它供电的开关按键，守护才能生效。</p>
-          <button class="btn" data-act="goto-circuits">${I.plus} 去建回路</button>
-        </div>`}
+      <div id="cktwrap">${this._cktSection()}</div>
       <div class="gt" as="div"><span>最近修复记录</span>
         ${(this._history || []).length ? `<span style="margin-left:auto"><button class="btn gray sm" data-act="clearhist">${I.trash} 清空</button></span>` : ""}
       </div>
@@ -898,6 +897,22 @@ class MeshGuardPanel extends HTMLElement {
             <p style="margin:0">暂无修复记录</p>
           </div>`}
       </div>`;
+  }
+
+  _cktSection() {
+    const circuits = this._circuits || [];
+    const states = (this._scheduler || {}).states || {};
+    return `<button class="gt${this._collapsed["dash-ckts"] ? " closed" : ""}" data-act="fold" data-id="dash-ckts">
+        <span>回路状态</span><span class="cnt">${circuits.length}</span><span class="chev">${I.chevD}</span>
+      </button>
+      ${this._collapsed["dash-ckts"] ? this._cktsSummary(circuits, states) :
+        circuits.length ? circuits.map((c) => this._circuitCard(c, states[c.id], "dash")).join("") : `
+        <div class="card empty">
+          <div class="eic">${I.link}</div>
+          <h4>还没有供电回路</h4>
+          <p>前往「接线映射」，把灯具指派给控制它供电的开关按键，守护才能生效。</p>
+          <button class="btn" data-act="goto-circuits">${I.plus} 去建回路</button>
+        </div>`}`;
   }
 
   _cktsSummary(circuits, states) {
@@ -1198,10 +1213,6 @@ class MeshGuardPanel extends HTMLElement {
     const r = this._pResults;
     const sup = lamps.filter((l) => l.supported);
     const selCount = this._lampSel.size;
-    const rooms = {};
-    for (const l of lamps) { const k = l.area_name || "未分配房间"; (rooms[k] = rooms[k] || []).push(l); }
-    const roomNames = Object.keys(rooms).sort((a, b) =>
-      (a === "未分配房间") - (b === "未分配房间") || a.localeCompare(b, "zh-Hans-CN"));
     return `
       <div class="notice">${I.info}<div>批量设置灯具「断电恢复后」的行为。<b>断电记忆</b>（默认）让守护修复过程对客户完全无感。</div></div>
       <div class="card">
@@ -1217,23 +1228,13 @@ class MeshGuardPanel extends HTMLElement {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin:2px 2px 10px">
-        <span style="font-size:13px;color:var(--text2);font-weight:600">已选 ${selCount} / ${sup.length} 个可设置灯具</span>
+        <span data-pcount style="font-size:13px;color:var(--text2);font-weight:600">已选 ${selCount} / ${sup.length} 个可设置灯具</span>
         <span style="margin-left:auto"></span>
         <button class="btn gray sm" data-act="lamp-all">全选</button>
         <button class="btn gray sm" data-act="lamp-none">清空</button>
         <button class="btn gray sm" data-act="lamps-reload" ${this._lampsLoading ? "disabled" : ""}>${I.refresh} 刷新</button>
       </div>
-      ${roomNames.length ? roomNames.map((rm) => {
-        const key = `po:${rm}`;
-        const closed = !!this._collapsed[key];
-        const list = rooms[rm].slice().sort((a, b) =>
-          (a.online === false) - (b.online === false) ||
-          String(a.name).localeCompare(String(b.name), "zh-Hans-CN"));
-        return `<button class="gt${closed ? " closed" : ""}" data-act="fold" data-id="${esc(key)}">
-            <span>${esc(rm)}</span><span class="cnt">${list.length}</span><span class="chev">${I.chevD}</span>
-          </button>
-          ${closed ? "" : list.map((l) => this._lampRow(l)).join("")}`;
-      }).join("") : `<div class="card empty"><div class="eic">${I.bulb}</div><h4>没有灯具</h4><p style="margin-bottom:0">请先在「设备识别」扫描并确认灯具分类。</p></div>`}
+      <div id="powrap">${this._lampGroups()}</div>
       ${r ? `
         <div class="gt" as="div"><span>执行结果</span><span class="cnt">${r.length}</span></div>
         <div class="card" style="padding-top:6px;padding-bottom:6px">
@@ -1249,6 +1250,43 @@ class MeshGuardPanel extends HTMLElement {
             </div>`;
           }).join("")}
         </div>` : ""}`;
+  }
+
+  _lampGroups() {
+    const lamps = this._lamps || [];
+    const rooms = {};
+    for (const l of lamps) { const k = l.area_name || "未分配房间"; (rooms[k] = rooms[k] || []).push(l); }
+    const roomNames = Object.keys(rooms).sort((a, b) =>
+      (a === "未分配房间") - (b === "未分配房间") || a.localeCompare(b, "zh-Hans-CN"));
+    if (!roomNames.length) {
+      return `<div class="card empty"><div class="eic">${I.bulb}</div><h4>没有灯具</h4><p style="margin-bottom:0">请先在「设备识别」扫描并确认灯具分类。</p></div>`;
+    }
+    return roomNames.map((rm) => {
+      const key = `po:${rm}`;
+      const closed = !!this._collapsed[key];
+      const list = rooms[rm].slice().sort((a, b) =>
+        (a.online === false) - (b.online === false) ||
+        String(a.name).localeCompare(String(b.name), "zh-Hans-CN"));
+      return `<button class="gt room${closed ? " closed" : ""}" data-act="fold" data-id="${esc(key)}">
+          <span>${esc(rm)}</span><span class="cnt">${list.length}</span><span class="chev">${I.chevD}</span>
+        </button>
+        ${closed ? "" : list.map((l) => this._lampRow(l)).join("")}`;
+    }).join("");
+  }
+
+  _lampSelSyncDOM() {
+    // 勾选变化只同步行高亮 / 计数文本 / 应用按钮，不整页重绘
+    const n = this._lampSel.size;
+    const supN = (this._lamps || []).filter((l) => l.supported).length;
+    this.shadowRoot.querySelectorAll("[data-lamp-sel]").forEach((el) =>
+      el.classList.toggle("on", this._lampSel.has(el.dataset.lampSel)));
+    const cnt = this.shadowRoot.querySelector("[data-pcount]");
+    if (cnt) cnt.textContent = `已选 ${n} / ${supN} 个可设置灯具`;
+    const ab = this.shadowRoot.querySelector('[data-act="apply-sel"]');
+    if (ab && !this._pBusy) {
+      ab.disabled = !n;
+      ab.innerHTML = `${I.check} 应用到选中（${n}）`;
+    }
   }
 
   _lampRow(l) {
@@ -1530,6 +1568,20 @@ class MeshGuardPanel extends HTMLElement {
   }
 
   _wizardSheet() {
+    return `<div class="sheet">
+      <button class="mask" data-act="wiz-close" aria-label="关闭"></button>
+      <div class="sbox"><div class="grabber"></div>
+        <div id="wizbody">${this._wizBodyHTML()}</div>
+      </div></div>`;
+  }
+
+  _renderWizBody() {
+    // 弹层内部局部重绘：步骤切换/房间折叠时只重渲染向导内容，不碰整页
+    const el = this.shadowRoot.querySelector("#wizbody");
+    if (el) el.innerHTML = this._wizBodyHTML();
+  }
+
+  _wizBodyHTML() {
     const w = this._wiz;
     const devs = this._devices;
     const switches = (devs || []).filter((d) => ["wall_switch", "actuator"].includes(d.classification) && (d.buttons || []).length);
@@ -1577,7 +1629,7 @@ class MeshGuardPanel extends HTMLElement {
     } else if (w.step === 2) {
       body = `
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <span style="font-size:13px;color:var(--text2);font-weight:600">已选 ${w.lights.length} 个</span>
+          <span data-wcount style="font-size:13px;color:var(--text2);font-weight:600">已选 ${w.lights.length} 个</span>
           <span style="margin-left:auto"></span>
           <button class="btn gray sm" data-act="wiz-all">全选</button>
           <button class="btn gray sm" data-act="wiz-none">清空</button>
@@ -1608,30 +1660,39 @@ class MeshGuardPanel extends HTMLElement {
         </div>`;
     }
 
-    return `<div class="sheet">
-      <button class="mask" data-act="wiz-close" aria-label="关闭"></button>
-      <div class="sbox"><div class="grabber"></div>
-        <h2>${w.id ? "编辑回路" : "新建回路"}</h2>
-        <div class="sheet-sub">${sub}</div>
-        ${stepsBar}
-        <div style="min-height:120px">${body}</div>
-        <div class="ft-btns">
-          ${w.step ? `<button class="btn gray" data-act="wiz-prev">上一步</button>` : `<button class="btn gray" data-act="wiz-close">取消</button>`}
-          ${w.step < 3 ? `<button class="btn" data-act="wiz-next">下一步</button>` : `<button class="btn" data-act="wiz-save">${I.check} ${w.id ? "保存修改" : "保存回路"}</button>`}
-        </div>
-      </div></div>`;
+    return `<h2>${w.id ? "编辑回路" : "新建回路"}</h2>
+      <div class="sheet-sub">${sub}</div>
+      ${stepsBar}
+      <div style="min-height:120px">${body}</div>
+      <div class="ft-btns">
+        ${w.step ? `<button class="btn gray" data-act="wiz-prev">上一步</button>` : `<button class="btn gray" data-act="wiz-close">取消</button>`}
+        ${w.step < 3 ? `<button class="btn" data-act="wiz-next">下一步</button>` : `<button class="btn" data-act="wiz-save">${I.check} ${w.id ? "保存修改" : "保存回路"}</button>`}
+      </div>`;
   }
 
   _wizPick(t) {
+    // 纯 DOM 局部更新：只切换行高亮与计数文本，零整页重绘
     const w = this._wiz, kind = t.dataset.wpick, v = t.dataset.v;
-    if (kind === "dev") { w.device_id = v; w.button = null; }
-    else if (kind === "btn") { w.button = Number(v); }
-    else if (kind === "light") {
+    if (kind === "dev") {
+      w.device_id = v; w.button = null;
+      this.shadowRoot.querySelectorAll('[data-wpick="dev"]').forEach((n) => n.classList.toggle("on", n === t));
+    } else if (kind === "btn") {
+      w.button = Number(v);
+      this.shadowRoot.querySelectorAll('[data-wpick="btn"]').forEach((n) => n.classList.toggle("on", n === t));
+    } else if (kind === "light") {
       const i = w.lights.indexOf(v);
       if (i >= 0) w.lights.splice(i, 1); else w.lights.push(v);
+      t.classList.toggle("on", i < 0);
+      this._wizCountSync();
     }
     this._wizAutoName();
-    this._render();
+    const ni = this.shadowRoot.querySelector('[data-k="wizname"]');
+    if (ni && !w.nameDirty) ni.value = w.name;
+  }
+
+  _wizCountSync() {
+    const cnt = this.shadowRoot.querySelector("[data-wcount]");
+    if (cnt) cnt.textContent = `已选 ${this._wiz.lights.length} 个`;
   }
 
   _wizNext() {
@@ -1641,7 +1702,7 @@ class MeshGuardPanel extends HTMLElement {
     if (w.step === 2 && !w.lights.length) return this._toastMsg("请至少勾选一个灯具", "err");
     this._wizAutoName();
     w.step += 1;
-    this._render();
+    this._renderWizBody();
   }
 
   async _saveCircuit() {
@@ -1719,27 +1780,41 @@ class MeshGuardPanel extends HTMLElement {
     if (t.dataset.lampSel) {
       const id2 = t.dataset.lampSel;
       if (this._lampSel.has(id2)) this._lampSel.delete(id2); else this._lampSel.add(id2);
-      return this._render();
+      return this._lampSelSyncDOM();
     }
 
     const act = t.dataset.act, id = t.dataset.id;
     const A = {
       "scan": () => this._scan(),
-      "fold": () => { this._collapsed[id] = !this._collapsed[id]; this._render(); },
+      "fold": () => {
+        this._collapsed[id] = !this._collapsed[id];
+        // 折叠只做局部更新，不整页重绘
+        if (id.startsWith("wz")) return this._renderWizBody();
+        if (id.startsWith("rm:")) { const w = this.shadowRoot.querySelector("#devwrap"); if (w) w.innerHTML = this._devGroups(); return; }
+        if (id.startsWith("po:")) { const w = this.shadowRoot.querySelector("#powrap"); if (w) w.innerHTML = this._lampGroups(); return; }
+        if (id === "dash-ckts") { const w = this.shadowRoot.querySelector("#cktwrap"); if (w) w.innerHTML = this._cktSection(); return; }
+        this._render();
+      },
       "goto-circuits": () => this._setTab("circuits"),
       "new": () => this._openWiz(),
       "edit": () => { const c = (this._circuits || []).find((x) => x.id === id); if (c) this._openWiz(c); },
       "wiz-close": () => { this._wiz = null; this._render(); },
-      "wiz-prev": () => { this._wiz.step -= 1; this._render(); },
+      "wiz-prev": () => { this._wiz.step -= 1; this._renderWizBody(); },
       "wiz-next": () => this._wizNext(),
       "wiz-save": () => this._saveCircuit(),
       "wiz-scan": () => this._scan(),
       "wiz-all": () => {
         this._wiz.lights = (this._devices || []).filter((d) => d.classification === "light" && d.light_entity).map((d) => d.light_entity);
         this._wizAutoName();
-        this._render();
+        this.shadowRoot.querySelectorAll('[data-wpick="light"]').forEach((n) => n.classList.add("on"));
+        this._wizCountSync();
       },
-      "wiz-none": () => { this._wiz.lights = []; this._wizAutoName(); this._render(); },
+      "wiz-none": () => {
+        this._wiz.lights = [];
+        this._wizAutoName();
+        this.shadowRoot.querySelectorAll('[data-wpick="light"]').forEach((n) => n.classList.remove("on"));
+        this._wizCountSync();
+      },
       "repair": () => this._repair(id),
       "verify": () => this._verify(id),
       "probe": () => this._probe(id),
@@ -1799,8 +1874,8 @@ class MeshGuardPanel extends HTMLElement {
       "apply": () => this._powerApply(),
       "apply-sel": () => this._powerApply([...this._lampSel]),
       "restore": () => this._powerRestore(),
-      "lamp-all": () => { this._lampSel = new Set((this._lamps || []).filter((l) => l.supported).map((l) => l.device_id)); this._render(); },
-      "lamp-none": () => { this._lampSel.clear(); this._render(); },
+      "lamp-all": () => { this._lampSel = new Set((this._lamps || []).filter((l) => l.supported).map((l) => l.device_id)); this._lampSelSyncDOM(); },
+      "lamp-none": () => { this._lampSel.clear(); this._lampSelSyncDOM(); },
       "lamps-reload": () => this._loadLamps(),
       "addwin": () => { this._wins = [...(this._wins || []), "13:00-14:00"]; this._render(); },
       "delwin": () => { this._wins = (this._wins || []).filter((_, i) => i !== Number(id)); this._render(); },
@@ -1853,8 +1928,13 @@ class MeshGuardPanel extends HTMLElement {
       await this._call({ type: `${DOMAIN}/set_class`, device_id: devId, classification: val });
       d.manual = val !== "auto";
       if (val !== "auto") d.classification = val;
+      // 仅局部刷新该设备卡的分类胶囊高亮，不整页重绘
+      const cur = d.manual ? d.classification : "auto";
+      this.shadowRoot.querySelectorAll(`[data-cls-dev="${CSS.escape(devId)}"]`).forEach((n) => {
+        n.classList.toggle("on", n.dataset.clsVal === cur && cur !== "auto");
+        n.classList.toggle("on-auto", cur === "auto" && n.dataset.clsVal === "auto");
+      });
       this._toastMsg("分类已更新", "ok");
-      this._render();
       this._scan(true); // 静默同步后端重新归类的结果
     } catch (e) { this._toastMsg("更新失败：" + (e.message || e), "err"); }
   }
