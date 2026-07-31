@@ -4,6 +4,9 @@ import sys as _sys
 if _sys.version_info[:2] >= (3, 14):
     from ._py314 import *  # noqa: F401,F403
     from ._py314 import async_setup_entry, async_unload_entry  # noqa: F401
-else:
+elif _sys.version_info[:2] >= (3, 13):
     from ._py313 import *  # noqa: F401,F403
     from ._py313 import async_setup_entry, async_unload_entry  # noqa: F401
+else:
+    from ._py312 import *  # noqa: F401,F403
+    from ._py312 import async_setup_entry, async_unload_entry  # noqa: F401

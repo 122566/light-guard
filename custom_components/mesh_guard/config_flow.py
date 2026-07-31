@@ -3,5 +3,7 @@ import sys as _sys
 
 if _sys.version_info[:2] >= (3, 14):
     from ._py314.config_flow import *  # noqa: F401,F403
-else:
+elif _sys.version_info[:2] >= (3, 13):
     from ._py313.config_flow import *  # noqa: F401,F403
+else:
+    from ._py312.config_flow import *  # noqa: F401,F403
