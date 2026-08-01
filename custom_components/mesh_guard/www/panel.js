@@ -432,6 +432,19 @@ div.gt { cursor:default; }
 .vd .vm { color:var(--text2); font-size:13px; margin-top:8px; line-height:1.6; }
 .logline.reveal { animation:vin .3s ease both; }
 
+/* 危险区 / 设备信息 */
+.danger { border:1px solid var(--red); }
+.danger h3 { color:var(--red); }
+.kv-row { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:.5px solid var(--sep); }
+.kv-row:last-child { border-bottom:0; }
+.kv-row .kl { width:64px; flex-shrink:0; color:var(--text2); font-size:13px; font-weight:600; }
+.kv-row .kval { flex:1; min-width:0; font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size:14px; font-weight:600; letter-spacing:.3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reset-warn { display:flex; gap:10px; padding:10px 0; align-items:flex-start; }
+.reset-warn svg { width:17px; height:17px; flex-shrink:0; margin-top:2px; }
+.reset-warn .wl { font-size:13px; line-height:1.6; }
+.reset-warn .wl b { display:block; margin-bottom:2px; }
+
 /* toast */
 .toast { position:fixed; left:50%; transform:translateX(-50%); z-index:90;
   bottom:calc(var(--nav-h) + 18px + env(safe-area-inset-bottom));
@@ -497,6 +510,7 @@ const I = {
   wand: _s('<path d="m6 21 9.5-9.5M14 4l1 2.5L17.5 7 15 8l-1 2.5L13 8l-2.5-1L13 5.5 14 4zM19 11l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z"/>'),
   tag: _s('<path d="M3.5 12.5V5a1.5 1.5 0 0 1 1.5-1.5h7.5a2 2 0 0 1 1.4.6l6.5 6.5a2 2 0 0 1 0 2.8l-5.6 5.6a2 2 0 0 1-2.8 0l-6.5-6.5a2 2 0 0 1-.5-1.4z"/><circle cx="8.5" cy="8.5" r="1.4"/>'),
   book: _s('<path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19v17.5H7.5A2.5 2.5 0 0 0 5 22V4.5z"/><path d="M5 19.5A2.5 2.5 0 0 1 7.5 17H19"/><path d="M9 7h6"/>'),
+  copy: _s('<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5.5 15h-.3A2.2 2.2 0 0 1 3 12.8V5.2A2.2 2.2 0 0 1 5.2 3h7.6A2.2 2.2 0 0 1 15 5.2v.3"/>'),
 };
 
 /* ---------------- 常量 ---------------- */
@@ -587,6 +601,8 @@ class MeshGuardPanel extends HTMLElement {
     this._customClasses = [];  // [{key,label}]
     this._clsMgr = false;      // 分类管理弹层
     this._prof = null;         // 配方编辑弹层
+    this._xiaomiMissing = false; // Xiaomi Home 集成缺失
+    this._resetAsk = false;    // 危险区确认弹层
     this._wiz = null;        // 回路向导（新建/编辑）
     this._log = null;        // 修复执行流水
     this._cf = null;         // 确认框
@@ -632,6 +648,7 @@ class MeshGuardPanel extends HTMLElement {
       const r = await this._call({ type: `${DOMAIN}/status` });
       this._scheduler = r.scheduler; this._history = r.history || [];
       if (r.circuits) this._circuits = r.circuits;
+      if (r.xiaomi_missing !== undefined) this._xiaomiMissing = !!r.xiaomi_missing;
       this._syncTasks(r.tasks || []);
     } catch (e) { console.warn("mesh_guard status:", e); }
   }
@@ -647,6 +664,7 @@ class MeshGuardPanel extends HTMLElement {
       this._settings = await this._call({ type: `${DOMAIN}/get_settings` });
       if (!this._wins) this._wins = [...(this._settings.repair_windows || [])];
       this._customClasses = Array.isArray(this._settings.custom_classes) ? this._settings.custom_classes : [];
+      if (this._settings.xiaomi_missing !== undefined) this._xiaomiMissing = !!this._settings.xiaomi_missing;
     } catch (e) { console.warn("mesh_guard settings:", e); }
   }
   async _loadProfiles() {
@@ -742,7 +760,7 @@ class MeshGuardPanel extends HTMLElement {
   _maybeRender() {
     // 弹层（向导/配方/分类管理/确认框/流水）打开期间，推送仅静默更新数据；
     // 弹层关闭时各 close 路径会立即 _render，自然应用最新数据。
-    if (this._wiz || this._prof || this._clsMgr || this._cf || this._log) { this._dirty = true; return; }
+    if (this._wiz || this._prof || this._clsMgr || this._cf || this._log || this._resetAsk) { this._dirty = true; return; }
     this._render();
   }
 
@@ -814,6 +832,7 @@ class MeshGuardPanel extends HTMLElement {
       ${this._log ? this._logSheet() : ""}
       ${this._clsMgr ? this._clsMgrSheet() : ""}
       ${this._prof ? this._profSheet() : ""}
+      ${this._resetAsk ? this._resetSheet() : ""}
       ${this._cf ? this._cfSheet() : ""}`;
 
     if (fk) {
@@ -844,6 +863,11 @@ class MeshGuardPanel extends HTMLElement {
     }
   }
 
+  _xmBanner() {
+    if (!this._xiaomiMissing) return "";
+    return `<div class="notice err" style="font-weight:600">${I.alert}<div>未检测到 Xiaomi Home 集成：可能已被删除或设备列表未更新，请到 设置→设备与服务 重新安装/登录 Xiaomi Home，恢复后此提示自动消失。</div></div>`;
+  }
+
   _skeleton() {
     return `<div class="sk" style="height:96px"></div><div class="sk" style="height:64px"></div>
       <div class="sk" style="height:140px"></div><div class="sk" style="height:140px"></div>`;
@@ -863,6 +887,7 @@ class MeshGuardPanel extends HTMLElement {
       <div class="stat"><div class="ic ${ic}">${icon}</div>
         <div class="num" style="${numStyle}">${num}</div><div class="lbl">${lbl}</div></div>`;
     return `
+      ${this._xmBanner()}
       <div class="stats">
         ${stat("ic-blue", I.bulb, nLights, "监测灯具")}
         ${stat("ic-purple", I.link, circuits.length, "供电回路")}
@@ -1060,12 +1085,13 @@ class MeshGuardPanel extends HTMLElement {
 
   /* ---------------- 设备识别 ---------------- */
   _vDevices() {
+    const B = this._xmBanner();
     if (this._scanning && !this._devices) {
-      return `<div class="card empty"><div class="eic"><span class="spin" style="width:26px;height:26px;border-width:3px"></span></div>
+      return `${B}<div class="card empty"><div class="eic"><span class="spin" style="width:26px;height:26px;border-width:3px"></span></div>
         <h4>正在扫描设备</h4><p style="margin-bottom:0">从 xiaomi_home 拉取全部 BLE Mesh 设备并自动分类…</p></div>`;
     }
     if (!this._devices) {
-      return `<div class="card empty">
+      return `${B}<div class="card empty">
         <div class="eic">${I.search}</div>
         <h4>先扫描一次设备</h4>
         <p>扫描 xiaomi_home 接入的全部设备，按「灯具 / 墙开 / 执行器 / 忽略」自动分类，人工可再校正。</p>
@@ -1073,6 +1099,7 @@ class MeshGuardPanel extends HTMLElement {
       </div>`;
     }
     return `
+      ${B}
       <div style="display:flex;gap:10px;margin-bottom:8px;align-items:stretch">
         <div style="position:relative;flex:1">
           <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--text3);width:16px;height:16px">${I.search}</span>
@@ -1180,6 +1207,7 @@ class MeshGuardPanel extends HTMLElement {
     const states = (this._scheduler || {}).states || {};
     const gu = (this._scheduler || {}).global_urgent || "follow";
     return `
+      ${this._xmBanner()}
       <div class="notice">${I.info}<div>把灯具指派给「控制它供电的开关按键」形成回路。建好后请用「验证通断」现场确认接线关系，守护才会准确断电修复。</div></div>
       <div class="card">
         <h3>随时修复（全局）</h3>
@@ -1491,6 +1519,20 @@ class MeshGuardPanel extends HTMLElement {
       </div>`;
     return `
       <div class="card">
+        <h3>设备信息</h3>
+        <div class="kv-row">
+          <span class="kl">设备ID</span>
+          <span class="kval">${esc(s.device_fingerprint || "—")}</span>
+          <button class="btn gray sm" data-act="copy" data-v="${esc(s.device_fingerprint || "")}">${I.copy} 复制</button>
+        </div>
+        <div class="kv-row">
+          <span class="kl">授权码</span>
+          <span class="kval">${esc(s.activation_code || "—")}</span>
+          <button class="btn gray sm" data-act="copy" data-v="${esc(s.activation_code || "")}">${I.copy} 复制</button>
+        </div>
+        <div class="hint">同一台设备删除并重装集成，设备ID不变，原授权码仍可激活。</div>
+      </div>
+      <div class="card">
         <h3>站点与告警</h3>
         <label class="f-lb" style="margin-top:2px">站点名称</label>
         <input class="inp" type="text" data-k="set_site_name" data-set="site_name" value="${esc(s.site_name || "")}" placeholder="如：杭州·云栖小筑">
@@ -1522,7 +1564,52 @@ class MeshGuardPanel extends HTMLElement {
         ${tm("max_retry", "最大重试次数", "单次掉线自动修复失败后的最大重试次数", "次")}
         ${tm("cooldown", "修复冷却", "同一回路两次自动修复之间的最小间隔", "秒")}
       </div>
-      <button class="btn block" data-act="saveset">保存设置</button>`;
+      <button class="btn block" data-act="saveset">保存设置</button>
+      <div class="card danger" style="margin-top:16px">
+        <h3>危险区</h3>
+        <div class="hint" style="margin:0 0 12px">把集成还原到默认状态。授权码、站点名称、企业微信 Webhook 与配方库会保留。</div>
+        <button class="btn redsolid" data-act="reset-open">${I.alert} 还原所有设置</button>
+      </div>`;
+  }
+
+  _resetSheet() {
+    return `<div class="sheet">
+      <button class="mask" data-act="reset-close" aria-label="取消"></button>
+      <div class="sbox"><div class="grabber"></div>
+        <h2 style="color:var(--red)">还原所有设置？</h2>
+        <div class="sheet-sub">此操作立即生效，不可撤销</div>
+        <div class="card" style="box-shadow:none;background:var(--card2);margin:0 0 14px;padding:6px 16px">
+          <div class="reset-warn" style="border-bottom:.5px solid var(--sep)">
+            <span style="color:var(--red)">${I.errc}</span>
+            <div class="wl"><b style="color:var(--red)">将清除</b>全部回路映射、设备人工分类裁定、历史记录；时序参数与修复时间窗恢复默认。</div>
+          </div>
+          <div class="reset-warn">
+            <span style="color:var(--green)">${I.okc}</span>
+            <div class="wl"><b style="color:var(--green)">将保留</b>授权码、站点名称、企业微信 Webhook、开关/灯具配方库。</div>
+          </div>
+        </div>
+        <label class="f-lb" style="margin-top:0">输入「还原」以确认</label>
+        <input class="inp" type="text" data-k="resetword" placeholder="还原" autocomplete="off">
+        <div class="ft-btns">
+          <button class="btn gray" data-act="reset-close">取消</button>
+          <button class="btn redsolid" data-act="reset-go" data-resetgo disabled>${I.alert} 确认还原</button>
+        </div>
+      </div></div>`;
+  }
+
+  async _doReset() {
+    try {
+      await this._call({ type: `${DOMAIN}/reset_all` });
+      this._resetAsk = false;
+      this._circuits = null; this._devices = null; this._history = [];
+      this._settings = null; this._wins = null; this._setDraft = {};
+      this._doneCards = {}; this._dismissed = new Set(); this._tasksInit = false;
+      this._profiles = null; this._lamps = null; this._lampSel = new Set();
+      await this._refreshAll();
+      this._loadProfiles();
+      this._toastMsg("已还原到默认状态", "ok");
+    } catch (e) { this._toastMsg("还原失败：" + (e.message || e), "err"); }
+    this._render();
   }
 
   /* ---------------- 回路向导 ---------------- */
@@ -1883,8 +1970,30 @@ class MeshGuardPanel extends HTMLElement {
       "cf-ok": () => this._cfDone(true),
       "cf-cancel": () => this._cfDone(false),
       "log-close": () => { this._log = null; this._render(); },
+      "copy": () => {
+        const v = t.dataset.v || "";
+        const ok2 = () => this._toastMsg("已复制", "ok");
+        const fail = () => this._toastMsg("复制失败，请手动选择复制", "err");
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(v).then(ok2, () => { this._copyFallback(v) ? ok2() : fail(); });
+        } else if (!this._copyFallback(v)) fail();
+      },
+      "reset-open": () => { this._resetAsk = true; this._render(); },
+      "reset-close": () => { this._resetAsk = false; this._render(); },
+      "reset-go": () => this._doReset(),
     };
     if (A[act]) return A[act]();
+  }
+
+  _copyFallback(v) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = v; ta.style.cssText = "position:fixed;opacity:0";
+      this.shadowRoot.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
   }
 
   _onInput(e) {
@@ -1897,6 +2006,12 @@ class MeshGuardPanel extends HTMLElement {
       return;
     }
     if (t.dataset.k === "wizname" && this._wiz) { this._wiz.name = t.value; this._wiz.nameDirty = true; return; }
+    if (t.dataset.k === "resetword") {
+      // 输入「还原」才可点确认（纯 DOM 直写，不重绘）
+      const go = this.shadowRoot.querySelector("[data-resetgo]");
+      if (go) go.disabled = t.value.trim() !== "还原";
+      return;
+    }
     if (t.dataset.prof && this._prof) { this._prof[t.dataset.prof] = t.value; return; }
     if (t.dataset.set !== undefined) {
       this._setDraft[t.dataset.set] = t.type === "number" ? (t.value === "" ? "" : Number(t.value)) : t.value;

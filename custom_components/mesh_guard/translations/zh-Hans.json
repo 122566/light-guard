@@ -28,5 +28,11 @@
         }
       }
     }
+  },
+  "issues": {
+    "missing_xiaomi_home": {
+      "title": "未检测到 Xiaomi Home 集成",
+      "description": "灯具守护依赖 Xiaomi Home 接入米家设备，但当前没有检测到它：可能已被删除，或设备列表未更新。\n\n请到 设置 → 设备与服务 中确认 Xiaomi Home 是否存在且已登录；如被删除，请重新安装并登录米家账号。恢复后本提示将自动消失。"
+    }
   }
 }

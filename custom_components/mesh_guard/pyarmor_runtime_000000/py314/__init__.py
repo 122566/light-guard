@@ -1,4 +1,4 @@
-# Pyarmor 9.2.6 (trial), 000000, 2026-07-31T19:40:12.865071
+# Pyarmor 9.2.6 (trial), 000000, 2026-08-01T11:31:24.340351
 def __pyarmor__():
     import platform
     import sys
@@ -49,10 +49,5 @@ def __pyarmor__():
             mach = 'x86'
     # mach = 'universal' if plat == 'darwin' else mach
     name = '.'.join(['_'.join([plat, mach]), 'pyarmor_runtime'])
-    try:
-        return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
-    except ModuleNotFoundError:
-        # musl(alpine) 环境无专用运行时，回退尝试 glibc 构建
-        name = '.'.join(['_'.join(['linux', mach]), 'pyarmor_runtime'])
-        return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
+    return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
 __pyarmor__ = __pyarmor__().__pyarmor__
