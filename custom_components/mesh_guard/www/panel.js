@@ -1539,6 +1539,11 @@ class MeshGuardPanel extends HTMLElement {
         <label class="f-lb">企业微信机器人 Webhook</label>
         <input class="inp mono" type="url" data-k="set_hook" data-set="wework_webhook" value="${esc(s.wework_webhook || "")}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…">
         <div class="hint">掉线排队、修复成功/失败都会推送到该群机器人；留空则不推送。</div>
+        <label class="f-lb">智能机器人 BotID（可选）</label>
+        <input class="inp mono" type="text" data-k="set_aibot_id" data-set="aibot_bot_id" value="${esc(s.aibot_bot_id || "")}" placeholder="智能机器人 BotID（API 模式-长连接）">
+        <label class="f-lb">智能机器人 Secret（可选）</label>
+        <input class="inp mono" type="password" data-k="set_aibot_sec" data-set="aibot_secret" value="${esc(s.aibot_secret || "")}" placeholder="长连接专用 Secret">
+        <div class="hint">群内 @机器人 并回复「站点名称立即修复」（如「展厅立即修复」），仅当站点名称与本站设置一致时，跳过排队与时间窗立即修复该站点全部待修回路，其他站点不受影响；留空则此功能关闭。</div>
       </div>
       <div class="card">
         <h3>修复时间窗</h3>
