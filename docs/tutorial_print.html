@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>灯具守护 使用教程</title><style>
+@page { size: A4; margin: 16mm 14mm; }
+* { box-sizing: border-box; }
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #1d1d1f;
+       font-size: 10.5pt; line-height: 1.65; max-width: 780px; margin: 0 auto; }
+h1 { font-size: 20pt; border-bottom: 3px solid #007aff; padding-bottom: 8px; }
+h2 { font-size: 14.5pt; color: #007aff; border-left: 5px solid #007aff;
+     padding-left: 10px; margin-top: 26px; page-break-after: avoid; }
+h3 { font-size: 12pt; margin-top: 16px; page-break-after: avoid; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; }
+th, td { border: 1px solid #d2d2d7; padding: 6px 9px; text-align: left; }
+th { background: #f5f5f7; }
+code { background: #f5f5f7; padding: 1px 5px; border-radius: 4px;
+       font-family: Consolas, monospace; font-size: 9pt; }
+pre { background: #f5f5f7; padding: 10px 12px; border-radius: 8px;
+      font-family: Consolas, monospace; font-size: 9pt; white-space: pre-wrap; }
+blockquote { border-left: 4px solid #ff9500; background: #fff8ee;
+             margin: 10px 0; padding: 8px 14px; border-radius: 0 8px 8px 0; }
+img { max-width: 260px; display: block; margin: 12px 0; border: 1px solid #e5e5ea;
+      border-radius: 8px; padding: 6px; background: #fff; }
+hr { border: 0; border-top: 1px solid #d2d2d7; margin: 20px 0; }
+h2, h3 { page-break-inside: avoid; }
+li { margin: 3px 0; }
+</style></head>
+<body><h1>灯具守护（Mesh Guard）保姆级使用教程</h1>
+<blockquote>
+<p>米家蓝牙 Mesh 灯具掉线自愈系统 · 用户版
+适用版本：v0.4.0（正式版）</p>
+</blockquote>
+<hr />
+<h2>目录</h2>
+<ol>
+<li><a href="#一这套系统是干什么的">这套系统是干什么的</a></li>
+<li><a href="#二开始之前你需要准备什么">开始之前你需要准备什么</a></li>
+<li><a href="#三第一步安装-xiaomi-home-并接入米家设备">第一步：安装 Xiaomi Home 并接入米家设备</a></li>
+<li><a href="#四第二步安装灯具守护集成">第二步：安装灯具守护集成</a></li>
+<li><a href="#五第三步激活识别码换授权码">第三步：激活（识别码换授权码）</a></li>
+<li><a href="#六第四步申请企业微信机器人-webhook收告警通知">第四步：申请企业微信机器人 Webhook（收告警通知）</a></li>
+<li><a href="#七第五步企业微信智能机器人长连接群里发指令立即修复可选但推荐">第五步：企业微信智能机器人（长连接）——群里发指令立即修复（可选但推荐）</a></li>
+<li><a href="#八第六步面板配置全流程核心">第六步：面板配置全流程（核心！）</a></li>
+<li><a href="#九日常使用与状态说明">日常使用与状态说明</a></li>
+<li><a href="#十遇到不认识的开关型号怎么办自动探型">遇到不认识的开关型号怎么办（自动探型）</a></li>
+<li><a href="#十一常见问题-faq">常见问题 FAQ</a></li>
+</ol>
+<hr />
+<h2>一、这套系统是干什么的</h2>
+<p>你家的米家蓝牙 Mesh 灯具偶尔会"掉线"（米家 App 里显示设备离线，怎么点都没反应）。以前只能跑到现场，把灯的电断一下再送上才能恢复。</p>
+<p>装了<strong>灯具守护</strong>之后，它会 7×24 小时盯着你的灯：</p>
+<blockquote>
+<p>发现灯掉线 → 自动找到控制它供电的那个开关按键 → 在每天的修复时段（默认下午 1 点到 2 点）自动给这个按键断电、复电 → 灯重新上线 → 给你的企业微信发一条"已恢复"通知。</p>
+</blockquote>
+<p>全程不需要人管。掉线、排队、恢复成功、恢复失败，都会推消息到你手机。</p>
+<p><strong>等不及修复时段？</strong> 还可以在企业微信群里 <strong>@机器人 回复「站点名称立即修复」</strong>，让排队中的灯具立刻开始修复（详见第七步）。</p>
+<hr />
+<h2>二、开始之前你需要准备什么</h2>
+<table>
+<thead>
+<tr>
+<th>需要的东西</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HA 主机</td>
+<td>刷了冬瓜HAOS 的电视盒子（S905L3 等），已联网</td>
+</tr>
+<tr>
+<td>米家中枢网关</td>
+<td>你家的蓝牙 Mesh 设备都通过它联网（本来就有）</td>
+</tr>
+<tr>
+<td>米家账号</td>
+<td>灯具、开关都已经加进这个账号（本来就配好了）</td>
+</tr>
+<tr>
+<td>企业微信 App</td>
+<td>用来接收掉线/恢复通知（手机装一个）</td>
+</tr>
+<tr>
+<td>企业微信管理权限</td>
+<td>创建"智能机器人"需要管理员权限（普通成员也可以请管理员代建，见第七步）</td>
+</tr>
+<tr>
+<td>授权码</td>
+<td>向卖家购买获得（激活时用，见第五步）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>三、第一步：安装 Xiaomi Home 并接入米家设备</h2>
+<p>灯具守护是通过 Xiaomi Home 这个官方集成来"看见"你家设备的，所以必须先装它。</p>
+<ol>
+<li>打开 HA 网页（一般是 <code>http://你的盒子IP:8123</code>）</li>
+<li>左侧菜单找到 <strong>HACS</strong> → <strong>集成</strong> → 右下角 <strong>➕ 浏览并下载存储库</strong></li>
+<li>搜索 <strong>Xiaomi Home</strong> → 点进去 → 右下角 <strong>下载</strong> → 按提示<strong>重启</strong> Home Assistant</li>
+<li>重启后：左下角 <strong>设置</strong> → <strong>设备与服务</strong> → 右下角 <strong>➕ 添加集成</strong> → 搜索 <strong>Xiaomi Home</strong></li>
+<li>按提示登录你的<strong>米家账号</strong>（扫码或账号密码），选择你家的家庭</li>
+<li>等几分钟，你家的灯具、开关就会全部出现在 HA 里</li>
+</ol>
+<blockquote>
+<p>✅ 自检：设置 → 设备与服务 → 设备，能看到你家的灯和开关，说明这一步成功了。</p>
+</blockquote>
+<hr />
+<h2>四、第二步：安装灯具守护集成</h2>
+<h3>方法 A：HACS 在线安装（推荐）</h3>
+<ol>
+<li>打开 <strong>HACS</strong> → <strong>集成</strong> → 右上角 <strong>⋮</strong>（三个点）→ <strong>自定义存储库</strong></li>
+<li>在"存储库"输入框粘贴：
+   <code>https://github.com/122566/light-guard</code></li>
+<li>"类型"选择 <strong>Integration</strong> → 点 <strong>添加</strong></li>
+<li>回到 HACS 集成页，搜索 <strong>Mesh Guard 灯具守护</strong> → 点进去 → <strong>下载</strong>（选择最新版本号，如 v0.4.0）</li>
+<li>下载完成后<strong>重启</strong> Home Assistant（HACS 会提示）</li>
+</ol>
+<h3>方法 B：手动安装（网络打不开 GitHub 时用）</h3>
+<ol>
+<li>在能上网的电脑上打开备用仓库：<code>https://gitee.com/apollo1018/lights-guard</code></li>
+<li>点 <strong>克隆/下载</strong> → <strong>下载 ZIP</strong>，解压</li>
+<li>把解压出来的 <strong><code>mesh_guard</code> 文件夹</strong> 和 <strong><code>pyarmor_runtime_000000</code> 文件夹</strong>（两个都要！）复制到 HA 配置目录的 <code>custom_components</code> 文件夹里
+   - 复制方法：用冬瓜HAOS 的 Samba 共享（电脑地址栏输入 <code>\\盒子IP\config</code>）或 File Editor 加载项</li>
+<li><strong>重启</strong> Home Assistant</li>
+</ol>
+<hr />
+<h2>五、第三步：激活（识别码换授权码）</h2>
+<ol>
+<li>重启后：左下角 <strong>设置</strong> → <strong>设备与服务</strong> → 右下角 <strong>➕ 添加集成</strong></li>
+<li>搜索 <strong>Mesh Guard 灯具守护</strong>，点开</li>
+<li>页面上会显示一串 <strong>本机识别码</strong>，形如：
+   <code>A1B2-C3D4-E5F6</code></li>
+<li><strong>把这串识别码发给卖家</strong>，卖家会给你换回一串<strong>授权码</strong>。联系方式（微信扫一扫添加）：</li>
+</ol>
+<p><img alt="扫码添加卖家微信" src="images/wechat-qr.png" /></p>
+<p>加好友后直接把识别码发过去即可，一般几分钟内就能收到授权码。
+5. 把授权码填进"授权码"输入框
+6. 顺手把<strong>站点名称</strong>改成这个家/这个项目的名字（比如"XX小区3栋张先生家"或"展厅"）——以后告警消息里会显示是哪个站点出的问题，群指令"立即修复"也靠它精确匹配（见第七步）
+7. 提交，左侧边栏出现 <strong>灯具守护</strong> 图标，激活完成 ✅</p>
+<blockquote>
+<p>⚠️ 注意：
+- 授权码是<strong>一机一码</strong>的，只能用在给你识别码的这一台 HA 上，换机器无效
+- 如果以后<strong>重装 HA 或换盒子</strong>，识别码会变，需要找卖家重新换码（这是防盗版设计，不是故障）
+- 激活只需一次，永久有效
+- <strong>站点名称</strong>一定要和最终告警/指令中想用的名字一字不差（含空格、符号），之后在面板"设置"页随时可以改</p>
+</blockquote>
+<hr />
+<h2>六、第四步：申请企业微信机器人 Webhook（收告警通知）</h2>
+<p>通知是通过"企业微信群机器人"推送到你手机的。按下面步骤申请（1 分钟）：</p>
+<h3>手机企业微信 App 操作</h3>
+<ol>
+<li>打开<strong>企业微信</strong>（注意：是企业微信，不是微信）</li>
+<li>建一个内部群：
+   - 右上角 <strong>➕</strong> → <strong>发起群聊</strong> → 选 2 个同事（或自己的其他号）拉个群
+   - 群名改成"智能家居告警"之类的
+   - ⚠️ 群里<strong>不能有微信个人号</strong>（外部联系人），否则没有机器人功能；加完机器人再把他们移出群也行</li>
+<li>进入群聊 → 右上角 <strong>···</strong>（群设置）</li>
+<li>下滑找到 <strong>群机器人</strong> → <strong>添加机器人</strong></li>
+<li>机器人名字随便起，比如"灯具守护" → <strong>添加</strong></li>
+<li>点刚建好的机器人 → <strong>复制 Webhook 地址</strong>，长这样：
+   <code>https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx-xxxx-xxxx</code></li>
+<li>回到 HA → 左侧 <strong>灯具守护</strong> → <strong>设置</strong> 页 → 把地址粘到 <strong>企业微信机器人 Webhook</strong> 输入框 → <strong>保存设置</strong></li>
+</ol>
+<blockquote>
+<p>✅ 自检：保存后掉线/恢复时群里就会收到消息。想立刻验证，可以在"接线映射"页对某个回路点"立即修复"，修复完成群里就会收到一条报告。</p>
+<p>💡 不配 Webhook 也能正常使用所有功能，只是手机收不到通知。</p>
+</blockquote>
+<hr />
+<h2>七、第五步：企业微信智能机器人（长连接）——群里发指令立即修复（可选但推荐）</h2>
+<h3>7.1 它和上面的 Webhook 机器人有什么区别？</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Webhook 机器人（第六步）</th>
+<th>智能机器人（这一步）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>作用</td>
+<td><strong>只负责收通知</strong>：系统把告警推给它，它发到群里</td>
+<td><strong>还能收指令</strong>：群成员 @它 发"立即修复"，它把指令传给系统</td>
+</tr>
+<tr>
+<td>创建位置</td>
+<td>手机 App 群聊里直接添加</td>
+<td>企业微信<strong>管理后台</strong>创建（普通成员可请管理员代建）</td>
+</tr>
+<tr>
+<td>需要填到面板的</td>
+<td>一串 Webhook 地址</td>
+<td>BotID + Secret 两个值</td>
+</tr>
+<tr>
+<td>群里长啥样</td>
+<td>"灯具守护"机器人</td>
+<td>你起的名字，如"回复专员"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>建议两个都配</strong>：Webhook 负责"通知"，智能机器人负责"发指令"，各干各的、互不影响。</p>
+<h3>7.2 我能创建智能机器人吗？</h3>
+<ul>
+<li>需要<strong>企业微信管理后台</strong>的入口。你是企业管理员/有"管理工具"权限 → 自己创建；</li>
+<li>普通成员 → 把下面的步骤截图发给管理员，请管理员建好机器人后把 <strong>BotID 和 Secret</strong> 发给你，再由你填进 HA 面板。</li>
+<li>机器人建好后，<strong>把机器人拉进你要用的那个群</strong>（管理员或群主操作）。</li>
+</ul>
+<h3>7.3 创建步骤（电脑端，约 2 分钟）</h3>
+<ol>
+<li>电脑浏览器打开企业微信管理后台：<code>https://work.weixin.qq.com</code> → 用管理员账号扫码登录</li>
+<li>左侧菜单：<strong>安全与管理</strong> → <strong>管理工具</strong>（有的版本叫"应用管理/管理工具"）</li>
+<li>找到 <strong>智能机器人</strong> → 点 <strong>创建机器人</strong>（或"添加"）</li>
+<li>机器人名称随便起，比如"回复专员"、"灯具守护指令"；头像可以默认</li>
+<li><strong>接入方式/API 模式</strong>选择 <strong>API 模式</strong>（有的界面叫"API 接口接入"或"长连接"）：
+   - 如果界面有 <strong>"连接方式"</strong> 选项 → 选 <strong>长连接</strong>
+   - 如果界面有 <strong>"插件 URL"、"回调地址"</strong> 之类的输入框 → <strong>留空即可，不用填</strong>（那是给别的接入方式用的，API 模式用不到）</li>
+<li>保存/创建</li>
+</ol>
+<h3>7.4 获取 BotID 和 Secret</h3>
+<p>创建完成后，机器人详情页会显示两串值（有的版本只显示一次，复制完立刻存好）：</p>
+<ul>
+<li><strong>BotID</strong>：一串字母数字，如 <code>aibTIv3HXb6zP8YONTStdtW6P_L-nZ4SLx1</code></li>
+<li><strong>Secret</strong>：另一串更长的密钥，如 <code>Y6EjvQ79yQKov3tpTUv5xJb7aZgzvAnRPWu81HFyMkm</code></li>
+</ul>
+<blockquote>
+<p>⚠️ Secret 相当于机器人的密码，<strong>不要发给无关人员</strong>；万一泄露/忘记，在机器人详情页<strong>重置 Secret</strong> 即可，然后重新填到面板保存。</p>
+</blockquote>
+<h3>7.5 把机器人拉进你的群</h3>
+<ol>
+<li>手机企业微信 App → 打开目标群 → 右上角 <strong>···</strong>（群设置）</li>
+<li>找到 <strong>群机器人</strong> → <strong>添加机器人</strong> → 选择刚创建的<strong>智能机器人</strong>（它会出现在可选列表里）</li>
+<li>添加成功后，群里会多出一个成员/机器人（比如"回复专员"）</li>
+</ol>
+<blockquote>
+<p>和第六步的 Webhook 机器人可以<strong>同时存在</strong>：群里一个收通知、一个收指令，互不冲突。</p>
+</blockquote>
+<h3>7.6 填到面板并保存</h3>
+<ol>
+<li>打开 HA → 左侧 <strong>灯具守护</strong> → <strong>设置</strong> 页 → <strong>站点与告警</strong></li>
+<li>把 <strong>BotID</strong> 填进"智能机器人 BotID"、<strong>Secret</strong> 填进"智能机器人 Secret"</li>
+<li>确认上面的 <strong>站点名称</strong> 是你想用的名字（比如"展厅"）</li>
+<li>点 <strong>保存设置</strong></li>
+</ol>
+<blockquote>
+<p>✅ 自检：保存后，HA 日志里会出现"智能机器人长连接订阅成功"（这一步系统会自动连上企微服务器，无需公网 IP/端口映射）。</p>
+</blockquote>
+<h3>7.7 怎么用：群里 @机器人 回复「站点名称立即修复」</h3>
+<p>规则只有一句话：</p>
+<blockquote>
+<p><strong>群里任意成员 @机器人，并回复「站点名称立即修复」</strong>（站点名称必须和面板里设置的一字不差），系统就会<strong>跳过排队、时间窗和冷却</strong>，立即修复<strong>本站所有排队中的灯具</strong>，并在群里推送开始/结果通知。</p>
+</blockquote>
+<p>举例（站点名称 = 展厅）：</p>
+<table>
+<thead>
+<tr>
+<th>群消息内容</th>
+<th>系统反应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@回复专员 展厅立即修复</code></td>
+<td>✅ 立即修复本站全部排队灯具</td>
+</tr>
+<tr>
+<td><code>@回复专员 客户A立即修复</code></td>
+<td>⛔ 站点名不匹配 → 什么都不做（静默）</td>
+</tr>
+<tr>
+<td><code>@回复专员 立即修复</code></td>
+<td>⛔ 缺少站点名 → 不触发（静默）</td>
+</tr>
+<tr>
+<td><code>@回复专员 今天天气不错</code></td>
+<td>⛔ 不是指令 → 不触发（静默）</td>
+</tr>
+<tr>
+<td>（没人回复）</td>
+<td>⛔ 维持现状：继续排队，等时间窗自动修</td>
+</tr>
+</tbody>
+</table>
+<p>要点：
+- <strong>必须 @机器人</strong>（消息以 @ 开头），不 @ 不算指令
+- <strong>"立即修复"四个字要精准</strong>，多一个字、少一个字都不行（"立即修复了"、"马上修复"都不触发）
+- <strong>站点名称要精确匹配</strong>：面板设的是"展厅"，群里就必须回"展厅立即修复"；大小写、空格、标点都要一致
+- 站点名和"立即修复"之间<strong>有没有空格都可以</strong>（<code>@回复专员 展厅立即修复</code>、<code>@回复专员展厅立即修复</code> 都行，但建议加空格好读）
+- 指令发出后<strong>不需要等回复</strong>：系统会直接执行，执行完群里收到"掉线灯具已恢复 ✅"；如果当前<strong>没有排队</strong>的灯具，会收到一条"当前没有排队中的待修复回路，无需执行"的提示
+- <strong>之前已经在排队</strong>的灯具也会一并被修复（不用重新排队）</p>
+<h3>7.8 多站点共用一个群（经销商/多客户场景）</h3>
+<p>如果你们一个群里管着<strong>多个客户/多台机器</strong>（比如"展厅"、"客户A家"、"客户B家"），没关系：</p>
+<ul>
+<li>每台 HA 在自己面板里设置各自的<strong>站点名称</strong>（如"客户A家"）</li>
+<li>群里可能有多个机器人（每个站点一个），<strong>@哪个机器人都行</strong>——系统按"站点名称"精确匹配，只有<strong>名字对得上的那台机器</strong>会执行</li>
+<li>其它站点即使也在群里，收到同一条消息也会因为"站点名不匹配"而<strong>保持静默</strong>，绝不误修</li>
+</ul>
+<blockquote>
+<p>例：群里发 <code>@回复专员 展厅立即修复</code> → 只有"展厅"这台机器立即修；"客户A家"、"客户B家"的排队灯具不受影响，照常等各自的时间窗。</p>
+</blockquote>
+<h3>7.9 怎么验证好不好用（首次配置必做）</h3>
+<p><strong>方法一（无灯具掉线时）：</strong></p>
+<ol>
+<li>确保面板"总览"页<strong>没有任何排队中</strong>的回路</li>
+<li>群里发：<code>@回复专员 展厅立即修复</code>（用你自己的站点名）</li>
+<li>预期：机器人不动作（因为没排队），但群里会收到一条"当前没有排队中的待修复回路，无需执行"——<strong>收到这条就说明链路通了</strong> ✅</li>
+</ol>
+<p><strong>方法二（有真实掉线时）：</strong></p>
+<ol>
+<li>等某盏灯真掉线，群里收到"发现灯具掉线，已排队"通知</li>
+<li>群里发：<code>@回复专员 展厅立即修复</code></li>
+<li>预期：几秒内听到/看到开关继电器动作（"咔哒"一声断电、约 5 秒后"咔哒"一声复电），随后群里收到"收到群指令，开始执行"和"掉线灯具已恢复 ✅"</li>
+</ol>
+<p><strong>方法三（顺带验证"不匹配不误动"）：</strong></p>
+<ol>
+<li>保持有排队灯具的状态</li>
+<li>先发一条 <code>@回复专员 随便起个别的名字立即修复</code> → 预期：完全没动静、也没有任何推送</li>
+<li>再发一条 <code>@回复专员 立即修复</code> → 预期：同上，完全静默</li>
+<li>最后发正确的 <code>@回复专员 展厅立即修复</code> → 才执行</li>
+</ol>
+<h3>7.10 常见问题：发指令没反应？</h3>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>原因与解决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>群里没收到"无需执行"提示，也没任何反应</td>
+<td>1) 站点名不匹配——核对面板"站点名称"和消息里的名字一字不差；2) 没 @ 机器人（要带 @）；3) BotID/Secret 没保存成功——回面板重新保存</td>
+</tr>
+<tr>
+<td>之前能用，突然没反应</td>
+<td>检查是否有人重置了机器人的 Secret；Secret 变了要重新填到面板保存</td>
+</tr>
+<tr>
+<td>消息发出去了但机器人根本没出现在群里</td>
+<td>机器人没被拉进这个群（见 7.5）；或在群里被移除了</td>
+</tr>
+<tr>
+<td>面板保存后 HA 日志没有"订阅成功"</td>
+<td>检查 BotID/Secret 是否填反/多空格；企微侧机器人是否被禁用</td>
+</tr>
+<tr>
+<td>群里有多个机器人，@ 错了</td>
+<td>规则是按"站点名称"匹配的，@哪个机器人不影响，但<strong>必须 @ 到机器人</strong>（不能只 @ 人）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>八、第六步：面板配置全流程（核心！）</h2>
+<p>打开左侧 <strong>灯具守护</strong>，从上到下有 6 个标签页。按下面顺序配置一遍：</p>
+<h3>① 设备识别（先让系统认识你的设备）</h3>
+<ol>
+<li>点 <strong>开始扫描</strong>，系统会列出全部米家设备并自动分类：<strong>灯具 / 墙开 / 执行器 / 窗帘 / 传感器 / 电视 / 音箱 / 空调 / 家用电器 / 待确认 / 忽略</strong></li>
+<li>设备按<strong>房间</strong>分组排列，方便逐个房间核对</li>
+<li>大部分设备不用管，重点检查两类：
+   - <strong>灯具</strong>：你家的灯是不是都在"灯具"组里？有没有灯被分到别的组？
+   - <strong>墙开</strong>：你家的墙壁开关是不是都在"墙开"组里？</li>
+<li>分错的设备：点设备卡片上的分类按钮（一排小胶囊），点正确的类别即可。卡片上标着"人工"的就是你手动改过的</li>
+<li>不需要的设备（摄像头、空调等）不用动，系统不会碰它们</li>
+</ol>
+<blockquote>
+<p>💡 命名小建议：开关按"房间+位置+几开"命名（如"客厅左二三开"），系统会自动校验按键数，不一致会提示你确认。</p>
+</blockquote>
+<h3>② 接线映射（告诉系统：哪个灯归哪个按键管）⭐ 最关键的一步</h3>
+<p>系统修复的原理是"断开某个按键的继电器"，所以必须精确知道<strong>每盏灯的电线接在哪个开关的哪个按键上</strong>。</p>
+<ol>
+<li>点 <strong>➕ 新建回路</strong>，弹出四步向导：
+   - <strong>第 1 步 选开关</strong>：点选供电的那个墙壁开关（按房间分组，好找）
+   - <strong>第 2 步 选按键</strong>：点选灯线接的那个按键（按键1/按键2…）
+   - <strong>第 3 步 选灯具</strong>：勾选接在这个按键下的灯（一条回路可以带好几盏灯，全勾上）
+   - <strong>第 4 步 命名保存</strong>：名字自动起好了（可以改），点保存</li>
+<li>保存后点回路卡片上的 <strong>验证通断</strong>：系统会把这个按键断电 3~5 秒再恢复，你<strong>现场看灯是不是真的灭了</strong>——灭了对就通过，没灭说明线接在别的按键上，重新配对</li>
+<li>每条回路都验证一遍，映射就准确了</li>
+</ol>
+<blockquote>
+<p>⚠️ 验证会真的断电几秒，白天进行即可。</p>
+</blockquote>
+<h3>③ 上电状态（让"断电重启"对灯无感）</h3>
+<p>修复要断电，很多灯断电再来电会"回到默认亮度"或"必须手动开"。这步把灯设置成<strong>断电记忆</strong>（断电前什么样，来电还是什么样）：</p>
+<ol>
+<li>打开 <strong>上电状态</strong> 页</li>
+<li>勾选你所有的灯具 → <strong>一键设置</strong>（选"断电记忆"）</li>
+<li>完成后灯具在修复断电时就不会有感知</li>
+</ol>
+<blockquote>
+<p>有些老型号灯不支持设置，会显示"无此类选项"，不影响使用，跳过即可。</p>
+</blockquote>
+<h3>④ 配方库（自动匹配开关的修复手法）</h3>
+<p>系统内置了常见开关型号的修复方法，一般<strong>不用手动管</strong>。点开可以看到每个型号用哪种手法（直断法/模式切换法/参数魔数法）。遇到不认识的型号用"自动探型"就能学会（见第十节）。不用手动改。</p>
+<h3>⑤ 设置</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>说明</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>站点名称</td>
+<td>这个家叫什么，告警里显示；群指令"站点名称立即修复"也按它精确匹配</td>
+<td>必填</td>
+</tr>
+<tr>
+<td>企业微信 Webhook</td>
+<td>第六节申请的地址</td>
+<td>建议填</td>
+</tr>
+<tr>
+<td>智能机器人 BotID / Secret</td>
+<td>第七节申请的两个值</td>
+<td>需要群指令就填</td>
+</tr>
+<tr>
+<td>修复时间窗</td>
+<td>每天什么时段允许自动断电修复</td>
+<td>默认 13:00-14:00，可改可加多段</td>
+</tr>
+<tr>
+<td>时序参数</td>
+<td>各种等待时长</td>
+<td>不懂就保持默认</td>
+</tr>
+</tbody>
+</table>
+<p>改完点 <strong>保存设置</strong>。</p>
+<hr />
+<h2>九、日常使用与状态说明</h2>
+<p>配置完之后就不用管了。每天可能遇到的情况：</p>
+<h3>总览页回路卡片的几种状态</h3>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🟢 正常</td>
+<td>灯都在线，岁月静好</td>
+</tr>
+<tr>
+<td>🟠 排队修复</td>
+<td>发现灯掉线了，已排进队列，等到修复时段（默认13点）自动修</td>
+</tr>
+<tr>
+<td>🔵 修复中</td>
+<td>正在对这个回路断电复电</td>
+</tr>
+<tr>
+<td>🔴 需人工</td>
+<td>自动修复试了几次没成功，需要你现场看看（群里也会收到告警）</td>
+</tr>
+</tbody>
+</table>
+<h3>你会收到的五种通知（企业微信群）</h3>
+<ol>
+<li><strong>发现灯具掉线</strong>："已发现掉线，将于今天 13:00 自动修复"（或"已排队"）</li>
+<li><strong>恢复成功</strong>："掉线灯具已恢复 ✅"（附修复过程流水）</li>
+<li><strong>自行恢复</strong>："灯具已自行恢复，修复计划已取消 ✅"（比如有人手动合闸把灯救回来了，系统会智能取消）</li>
+<li><strong>恢复失败</strong>："自动恢复失败，需人工处理 🚨"（连续几次断电复电灯都没回来，可能是灯具硬件问题或空开跳闸）</li>
+<li><strong>模式还原失败</strong>："灯具已恢复，但模式还原失败 ⚠️"（灯好了，但开关的无线模式没切回去，需要你现场按一下或联系售后）</li>
+</ol>
+<h3>掉线了但等不及修复时段？四种办法</h3>
+<ol>
+<li><strong>群里发指令（最方便）</strong>：@机器人 回复「站点名称立即修复」（见第七步），全站排队灯具立刻开修</li>
+<li><strong>面板立即修复</strong>：找到这条回路，点 <strong>立即修复</strong>（远程就能点，不用去现场）</li>
+<li><strong>单回路随时修</strong>：建回路时给这条回路打开"随时修复"开关</li>
+<li><strong>全局随时修</strong>：顶部全局开关切到"全部开启"（所有回路都随到随修）</li>
+</ol>
+<hr />
+<h2>十、遇到不认识的开关型号怎么办（自动探型）</h2>
+<p>系统内置了常见开关的修复方法。如果你家装了新型号开关，回路卡片上会标"未探型"：</p>
+<ol>
+<li>确保这条回路的灯<strong>当前是在线的</strong>（不在线先手动救回来）</li>
+<li>点回路卡片上的 <strong>探型</strong> 按钮</li>
+<li>系统会自动做两轮测试（先试直接断电，再试切换模式后断电），通过"灯会不会真的灭"来判断哪种方法有效</li>
+<li>全程自动，大约需要 <strong>9~20 分钟</strong>（因为要等米家确认灯离线），卡片上会显示"探型中 mm:ss"</li>
+<li>探出结果后：方法自动保存，<strong>同型号的所有开关以后都直接用</strong>，不用每台都探</li>
+</ol>
+<blockquote>
+<p>⚠️ 探型期间灯会短暂断电一两次，尽量安排在白天没人的时段；期间也可以随时点"停止"中止（继电器和模式会自动恢复）。</p>
+</blockquote>
+<hr />
+<h2>十一、常见问题 FAQ</h2>
+<p><strong>Q：激活时提示"授权码无效或不属于本机"？</strong>
+A：九成是识别码抄错了，重新核对页面上的识别码再找卖家换码；或者是把 A 机器的码填到 B 机器了（一机一码）。</p>
+<p><strong>Q：扫描出来的设备不全 / 没有设备？</strong>
+A：先确认 Xiaomi Home 里能看到这些设备（第三节自检）。HA 里都没有的话是米家接入问题，不是本系统的问题。</p>
+<p><strong>Q：灯掉线了，为什么到了 13 点还没修？</strong>
+A：看总览页这条回路的状态：还在"排队"就等到点；显示"需人工"说明已经修过但失败了，按第四条通知去现场排查（常见原因：空开跳闸、灯具硬件故障）。</p>
+<p><strong>Q：修复时段我想改到凌晨行不行？</strong>
+A：可以改（设置页），但<strong>不建议</strong>——修复会断电灭灯、继电器有"咔哒"声，凌晨会打扰休息。默认下午 1-2 点就是按"一般没人开灯"选的。</p>
+<p><strong>Q：群里 @机器人 回了"立即修复"，为什么没反应？</strong>
+A：按顺序查：1) 有没有 @ 到机器人（消息必须以 @ 开头）；2) "站点名称"是不是和面板设置<strong>一字不差</strong>（重点检查空格、全半角）；3) 必须是"站点名称+立即修复"的格式，裸"立即修复"不触发；4) BotID/Secret 是否填对并保存（保存后 HA 日志应有"长连接订阅成功"）。</p>
+<p><strong>Q：群里多个站点（客户）的机器人，会不会互相误触发？</strong>
+A：不会。每条指令都带"站点名称"，只有和本站设置完全一致的那台机器才执行，其它站点完全静默。</p>
+<p><strong>Q：@机器人 发了"立即修复"，但提示"当前没有排队中的待修复回路"？</strong>
+A：说明链路是通的，只是当前没有掉线灯具在排队，无需处理。等真掉线排队后再发即可。</p>
+<p><strong>Q：客户/家人手动把灯按灭了，系统会以为是掉线吗？</strong>
+A：不会。"按灭"和"掉线"在系统里是两个状态，掉线指的是设备从米家网络上消失（unavailable）且持续 2 分钟以上。</p>
+<p><strong>Q：家里停电再来电，一堆灯会不会被误修？</strong>
+A：不会乱修。停电后来电，灯都会自己回在线，系统看到"在线"就不会动作。只有确实回不来在线的灯才会进入修复队列。</p>
+<p><strong>Q：更新集成怎么操作？</strong>
+A：HACS 里看到"Mesh Guard 灯具守护"有更新提示 → 点进去 → <strong>重新下载/更新</strong> → 重启 HA 即可，配置不会丢。</p>
+<p><strong>Q：GitHub 打不开，HACS 一直转圈/报错？</strong>
+A：换方法 B 手动安装（见第四节），用 Gitee 备用仓库下载 zip。</p>
+<p><strong>Q：有些灯在"上电状态"里显示"无此类选项"？</strong>
+A：部分灯具型号本身不支持设置断电行为，不影响使用和修复，忽略即可。</p>
+<p><strong>Q：想换个群收通知？</strong>
+A：在新群里按第六节加个 Webhook 机器人，把新 webhook 填进设置页保存即可；群指令的智能机器人同理（第七节），新群里添加该智能机器人即可。</p>
+<p><strong>Q：机器人的 Secret 忘了/泄露了？</strong>
+A：企业微信管理后台 → 智能机器人详情页 → <strong>重置 Secret</strong>，把新值填回面板保存。旧 Secret 立即失效。</p>
+<hr />
+<blockquote>
+<p>还有解决不了的问题？微信扫码添加卖家（见第五节激活里的二维码），把面板"总览"页截图 + 问题描述发过去即可。</p>
+</blockquote></body></html>
