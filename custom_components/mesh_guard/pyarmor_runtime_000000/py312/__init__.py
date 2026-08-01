@@ -1,4 +1,4 @@
-# Pyarmor 9.2.6 (trial), 000000, 2026-08-01T11:51:34.116255
+# Pyarmor 9.2.6 (trial), 000000, 2026-08-01T12:02:24.836994
 def __pyarmor__():
     import platform
     import sys
@@ -49,5 +49,9 @@ def __pyarmor__():
             mach = 'x86'
     # mach = 'universal' if plat == 'darwin' else mach
     name = '.'.join(['_'.join([plat, mach]), 'pyarmor_runtime'])
-    return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
+    try:
+        return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
+    except ModuleNotFoundError:
+        name = '.'.join(['_'.join(['linux', mach]), 'pyarmor_runtime'])
+        return __import__(name, globals(), locals(), ['__pyarmor__'], level=1)
 __pyarmor__ = __pyarmor__().__pyarmor__
