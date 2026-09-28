@@ -410,6 +410,20 @@ div.gt { cursor:default; }
 .mrow .mb { flex-shrink:0; margin-top:1px; }
 .mrow .mf { color:var(--text2); font-size:13px; line-height:1.55; }
 
+/* 配方向导 / 听声测试 · 设备选择（区域分组 + 点击展开按键） */
+.lr-room { font-size:12.5px; color:var(--text2); font-weight:700; margin:14px 2px 7px; display:flex; align-items:center; gap:7px; }
+.lr-room .cnt { background:var(--fill); border-radius:999px; padding:1px 9px; font-size:11px; font-weight:600; color:var(--text3); }
+.lr-dev { display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  background:var(--card); border:.5px solid var(--sep); border-radius:12px;
+  padding:11px 13px; margin-bottom:7px; cursor:pointer; }
+.lr-dev.on { border-color:var(--accent); background:var(--accent-bg); }
+.lr-dev .nm { font-size:14px; font-weight:700; color:var(--text); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lr-dev .mt { font-size:10.5px; color:var(--text3); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; flex-shrink:0; }
+.lr-dev .chev { color:var(--text3); flex-shrink:0; transition:transform .18s; display:flex; }
+.lr-dev.on .chev { transform:rotate(180deg); }
+.lr-keys { display:flex; flex-wrap:wrap; gap:7px; padding:1px 2px 9px; }
+.lr-keys .chip-b { font-size:12px; min-height:32px; padding:5px 12px; }
+
 /* 选择行禁用态（上电状态页不支持的灯具） */
 .pick[disabled] { opacity:.58; cursor:default; }
 .pick[disabled]:active { transform:none; }
@@ -1544,9 +1558,33 @@ class MeshGuardPanel extends HTMLElement {
     this._render();
   }
 
+  _devPickerHtml(sel, prefix) {
+    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
+    const rooms = {};
+    for (const d of devs) {
+      const r = d.area_name || "未分配房间";
+      (rooms[r] = rooms[r] || []).push(d);
+    }
+    const names = Object.keys(rooms).sort((a, b) =>
+      (a === "未分配房间") - (b === "未分配房间") || a.localeCompare(b, "zh-Hans-CN"));
+    if (!names.length) return `<div class="hint">没有扫描到带按键的开关设备，请先到设备页扫描。</div>`;
+    return names.map((r) => `
+      <div class="lr-room">${esc(r)}<span class="cnt">${rooms[r].length}</span></div>
+      ${rooms[r].map((d) => {
+        const on = sel.deviceId === d.device_id;
+        return `<button class="lr-dev${on ? " on" : ""}" data-act="${prefix}-dev" data-id="${esc(d.device_id)}">
+          <span class="nm">${esc(d.name || d.model || d.device_id)}</span>
+          ${d.online === false ? `<span class="bd b-gray" style="font-size:10px;padding:1px 7px;flex-shrink:0">离线</span>` : ""}
+          <span class="mt">${esc(d.model || "")}</span>
+          <span class="chev">${I.chevD}</span>
+        </button>
+        ${on ? `<div class="lr-keys">${(d.buttons || []).map((b) =>
+          `<button class="chip-b xs${sel.button === b.index ? " on" : ""}" data-act="${prefix}-btn" data-id="${b.index}">按键${b.index} · ${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+      }).join("")}`).join("");
+  }
+
   _learnSheet() {
     const L = this._learn;
-    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
     let body = "";
     let footer = "";
     if (L.phase === "done") {
@@ -1556,10 +1594,7 @@ class MeshGuardPanel extends HTMLElement {
       body = `<div class="hint">所有候选项都没听到继电器声音。可能该型号的继电器通断另有参数，建议用「新增配方」手工填写或联系支持。</div>`;
       footer = `<button class="btn gray" data-act="learn-close">关闭</button>`;
     } else if (L.step === 0) {
-      body = `
-        <label class="f-lb">选择开关</label>
-        <div class="seg">${devs.map((d) => `<button data-act="learn-dev" data-id="${esc(d.device_id)}" class="${L.deviceId === d.device_id ? "on" : ""}">${esc(d.name || d.model || d.device_id)}</button>`).join("")}</div>
-        ${L.deviceId ? `<label class="f-lb">选择要学习的按键</label><div class="seg">${L.buttons.map((b) => `<button data-act="learn-btn" data-id="${b.index}" class="${L.button === b.index ? "on" : ""}">${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+      body = `<label class="f-lb">选择开关（按区域分组，点击展开按键）</label>${this._devPickerHtml(L, "learn")}`;
       footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-next" ${L.button ? "" : "disabled"}>开始学习</button>`;
     } else if (L.step === 1) {
       body = `<div class="hint">第一步：请打开米家 APP，把「${esc(L.deviceLabel)}」的「${esc(L.btnLabel)}」切换到<b>无线模式</b>（已经是无线模式可跳过），然后点下方按钮。</div>`;
@@ -1791,15 +1826,11 @@ class MeshGuardPanel extends HTMLElement {
 
   _testSheet() {
     const T = this._test;
-    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
     let body = "";
     let footer = "";
     if (T.phase === "pick") {
-      body = `
-        <label class="f-lb">测试配方：${esc(T.model)}（${esc(METHOD_LABEL[T.profile.method] || T.profile.method || "未知")}）</label>
-        <label class="f-lb">选择该型号的一台开关</label>
-        <div class="seg">${devs.map((d) => `<button data-act="test-dev" data-id="${esc(d.device_id)}" class="${T.deviceId === d.device_id ? "on" : ""}">${esc(d.name || d.model || d.device_id)}</button>`).join("")}</div>
-        ${T.deviceId ? `<label class="f-lb">选择按键</label><div class="seg">${T.buttons.map((b) => `<button data-act="test-btn" data-id="${b.index}" class="${T.button === b.index ? "on" : ""}">${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+      body = `<label class="f-lb">测试配方：${esc(T.model)}（${esc(METHOD_LABEL[T.profile.method] || T.profile.method || "未知")}）</label>
+        <label class="f-lb">选择该型号的一台开关（点击展开按键）</label>${this._devPickerHtml(T, "test")}`;
       footer = `<button class="btn gray" data-act="test-close">取消</button><button class="btn" data-act="test-confirm" ${T.button ? "" : "disabled"}>下一步</button>`;
     } else if (T.phase === "confirm") {
       body = `<div class="hint">将执行：${T.profile.method === "direct" ? "直接 断→通→断→通" : "切普通 → 断→通→断→通 → 还原无线"}<br><br>请<b>走到开关旁边</b>，准备好听继电器「咔嗒」声（两声），点击后立即执行。</div>`;
