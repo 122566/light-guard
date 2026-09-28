@@ -1382,7 +1382,9 @@ class MeshGuardPanel extends HTMLElement {
       let params = "";
       if (scope === "switch") {
         if (p.method === "select") params = `普通:${p.normal_option ?? "-"} / 无线:${p.wireless_option ?? "-"}`;
-        else if (p.method === "number") params = `魔数 ${p.normal_value ?? "-"} ↔ ${p.wireless_value ?? "-"}`;
+        else if (p.method === "number") params = p.byte_index
+          ? `字节法 普通:0x${(p.normal_byte ?? 0).toString(16)} / 无线:0x${(p.wireless_byte ?? 0).toString(16)} · 键字节:${esc(JSON.stringify(p.byte_index))}`
+          : `魔数 ${p.normal_value ?? "-"} ↔ ${p.wireless_value ?? "-"}`;
         else params = "无需参数";
       } else {
         params = `关键词:${p.entity_keyword ?? "-"} · 断电记忆=${p.modes?.["断电记忆"] ?? "-"} · 开灯=${p.modes?.["来电开灯"] ?? "-"} · 关灯=${p.modes?.["来电关灯"] ?? "-"}`;
@@ -1430,6 +1432,8 @@ class MeshGuardPanel extends HTMLElement {
       model: model || "", method: exist?.method || "direct",
       normal_option: exist?.normal_option ?? "", wireless_option: exist?.wireless_option ?? "",
       normal_value: exist?.normal_value ?? "", wireless_value: exist?.wireless_value ?? "",
+      byte_index: exist?.byte_index ? JSON.stringify(exist.byte_index) : "",
+      normal_byte: exist?.normal_byte ?? "", wireless_byte: exist?.wireless_byte ?? "",
       entity_keyword: exist?.entity_keyword || "",
       m1: exist?.modes?.["断电记忆"] ?? "", m2: exist?.modes?.["来电开灯"] ?? "", m3: exist?.modes?.["来电关灯"] ?? "",
       note: exist?.note || "",
@@ -1453,7 +1457,7 @@ class MeshGuardPanel extends HTMLElement {
             `<button data-profmethod="${m}" class="${p.method === m ? "on" : ""}">${lb}</button>`).join("")}
         </div>
         ${p.method === "select" ? fld("normal_option", "普通选项", "如 有线和无线开关") + fld("wireless_option", "无线选项", "如 无线开关") : ""}
-        ${p.method === "number" ? fld("normal_value", "普通魔数（十进制）", "如 83918848", "number") + fld("wireless_value", "无线魔数（十进制）", "如 1426096128", "number") : ""}
+        ${p.method === "number" ? fld("normal_value", "普通魔数（十进制，可选）", "如 83918848", "number") + fld("wireless_value", "无线魔数（十进制，可选）", "如 1426096128", "number") + fld("byte_index", "键字节位图（JSON，共享参数用，可选）", '如 {"1":0,"2":1}') + fld("normal_byte", "普通字节值 0-255（可选）", "如 0", "number") + fld("wireless_byte", "无线字节值 0-255（可选）", "如 35", "number") + `<div class="hint">共享打包参数型开关（如 zidt 八开 1-4 键共用 switch_one_th_mode）填字节三件套；独立参数型（如 ZM 四键）填两个魔数。</div>` : ""}
         ${p.method === "direct" ? `<div class="hint">直断法无需额外参数。</div>` : ""}
         ${fld("note", "备注（可选）", "如 PTX AE三开：现场自动探型习得")}`;
     } else {
@@ -1489,8 +1493,19 @@ class MeshGuardPanel extends HTMLElement {
         if (!p.normal_option || !p.wireless_option) return this._toastMsg("请填写普通/无线选项", "err");
         profile.normal_option = p.normal_option; profile.wireless_option = p.wireless_option;
       } else if (p.method === "number") {
-        if (p.normal_value === "" || p.wireless_value === "") return this._toastMsg("请填写两个魔数", "err");
-        profile.normal_value = Number(p.normal_value); profile.wireless_value = Number(p.wireless_value);
+        const bi = (p.byte_index || "").trim();
+        if (bi) {
+          let parsed;
+          try { parsed = JSON.parse(bi); } catch (e) { return this._toastMsg("键字节位图不是合法 JSON", "err"); }
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return this._toastMsg("键字节位图必须是对象", "err");
+          profile.byte_index = parsed;
+          profile.normal_byte = Number(p.normal_byte);
+          profile.wireless_byte = Number(p.wireless_byte);
+          if (Number.isNaN(profile.normal_byte) || Number.isNaN(profile.wireless_byte)) return this._toastMsg("请填写普通/无线字节值", "err");
+        } else {
+          if (p.normal_value === "" || p.wireless_value === "") return this._toastMsg("请填写两个魔数（或键字节三件套）", "err");
+          profile.normal_value = Number(p.normal_value); profile.wireless_value = Number(p.wireless_value);
+        }
       }
     } else {
       if (!p.entity_keyword) return this._toastMsg("请填写实体关键词", "err");
