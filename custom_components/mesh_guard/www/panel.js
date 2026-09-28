@@ -1539,7 +1539,7 @@ class MeshGuardPanel extends HTMLElement {
     if (!devs.length) { this._toastMsg("没有扫描到带按键的开关设备，请先到设备页扫描", "err"); return; }
     this._learn = { step: 0, deviceId: null, deviceLabel: "", model: "", buttons: [],
       button: null, relay: null, modeEntity: null, btnLabel: "",
-      diff1: null, diff2: null, queue: [], qIdx: 0, phase: "",
+      diff1: null, queue: [], qIdx: 0, phase: "",
       profile: null, profileLabel: "", lastResult: null };
     this._render();
   }
@@ -1549,21 +1549,39 @@ class MeshGuardPanel extends HTMLElement {
     const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
     let body = "";
     let footer = "";
-    if (L.step === 0) {
+    if (L.phase === "done") {
+      body = `<div class="hint">🎉 已确定配方：<b>${esc(L.profileLabel)}</b><br><br>确认无误后保存入库，同型号开关的回路将自动继承。<br><br>⚠️ 请记得把该按键<b>切回无线模式</b>（配方运行的前提）。</div>`;
+      footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-save">${I.check} 保存配方</button>`;
+    } else if (L.phase === "failed") {
+      body = `<div class="hint">所有候选项都没听到继电器声音。可能该型号的继电器通断另有参数，建议用「新增配方」手工填写或联系支持。</div>`;
+      footer = `<button class="btn gray" data-act="learn-close">关闭</button>`;
+    } else if (L.step === 0) {
       body = `
         <label class="f-lb">选择开关</label>
         <div class="seg">${devs.map((d) => `<button data-act="learn-dev" data-id="${esc(d.device_id)}" class="${L.deviceId === d.device_id ? "on" : ""}">${esc(d.name || d.model || d.device_id)}</button>`).join("")}</div>
         ${L.deviceId ? `<label class="f-lb">选择要学习的按键</label><div class="seg">${L.buttons.map((b) => `<button data-act="learn-btn" data-id="${b.index}" class="${L.button === b.index ? "on" : ""}">${esc(b.label)}</button>`).join("")}</div>` : ""}`;
       footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-next" ${L.button ? "" : "disabled"}>开始学习</button>`;
     } else if (L.step === 1) {
-      body = `<div class="hint">✅ 已记录当前参数快照。<br><br>请打开米家 APP，把「${esc(L.deviceLabel)}」的「${esc(L.btnLabel)}」切换到<b>另一个模式</b>（现在是普通就切无线，是无线就切普通），切换完成后点下方按钮。</div>`;
-      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot2">已切换，比对变化</button>`;
+      body = `<div class="hint">第一步：请打开米家 APP，把「${esc(L.deviceLabel)}」的「${esc(L.btnLabel)}」切换到<b>无线模式</b>（已经是无线模式可跳过），然后点下方按钮。</div>`;
+      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot1">已是无线，记录快照</button>`;
     } else if (L.step === 2) {
-      body = `<div class="hint">检测到以下参数变化：</div>${this._learnDiffRows(L.diff1)}<div class="hint">现在请把它<b>切回</b>原来的模式，切完点下方按钮。</div>`;
-      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot3">已切回，确认参数</button>`;
+      if (L.phase === "confirm") {
+        body = `<div class="hint">第二步：先试<b>直断法</b>——无线模式下继电器直接通断。<br><br>请走到开关旁边，准备好听继电器「咔嗒」声，然后点下方按钮立即执行（断→通→断→通，两声咔嗒）。</div>`;
+        footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-exec">我已就位，开始</button>`;
+      } else if (L.phase === "running") {
+        body = `<div class="hint"><span class="spin"></span> 正在执行继电器动作（约 8 秒）…</div>`;
+      } else if (L.phase === "asked") {
+        body = `<div class="hint">测试执行完成（继电器已复电）。<br><br><b>听到继电器咔嗒声了吗？</b></div>`;
+        footer = `<button class="btn gray" data-act="learn-heard" data-v="0">没听到</button><button class="btn" data-act="learn-heard" data-v="1">听到了</button>`;
+      }
     } else if (L.step === 3) {
-      body = `<div class="hint">✅ 切回后参数已复原确认。接下来用继电器声音自动筛选配方（每轮约 8 秒），请待在开关旁。</div>`;
-      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-test">开始听声验证</button>`;
+      if (!L.diff1) {
+        body = `<div class="hint">第三步：请打开米家 APP，把该键切换到<b>普通/有线模式</b>，切换完成后点下方按钮。</div>`;
+        footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot2">已切换，比对变化</button>`;
+      } else {
+        body = `<div class="hint">检测到以下参数变化（无线 → 普通）：</div>${this._learnDiffRows(L.diff1)}<div class="hint">接下来用继电器声音自动筛选配方（每轮约 8 秒），请待在开关旁。</div>`;
+        footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-test">开始听声验证</button>`;
+      }
     } else if (L.step === 4) {
       if (L.phase === "confirm") {
         const t = L.queue[L.qIdx];
@@ -1574,19 +1592,13 @@ class MeshGuardPanel extends HTMLElement {
       } else if (L.phase === "asked") {
         body = `<div class="hint">测试执行完成（继电器已复电、模式已还原）。<br><br><b>听到继电器咔嗒声了吗？</b></div>`;
         footer = `<button class="btn gray" data-act="learn-heard" data-v="0">没听到</button><button class="btn" data-act="learn-heard" data-v="1">听到了</button>`;
-      } else if (L.phase === "done") {
-        body = `<div class="hint">🎉 已确定配方：<b>${esc(L.profileLabel)}</b><br><br>确认无误后保存入库，同型号开关的回路将自动继承。</div>`;
-        footer = `<button class="btn gray" data-act="learn-prev">重来</button><button class="btn" data-act="learn-save">${I.check} 保存配方</button>`;
-      } else if (L.phase === "failed") {
-        body = `<div class="hint">所有候选项都没听到继电器声音。可能该型号的继电器通断另有参数，建议用「新增配方」手工填写或联系支持。</div>`;
-        footer = `<button class="btn gray" data-act="learn-close">关闭</button>`;
       }
     }
     return `<div class="sheet">
       <button class="mask" data-act="learn-close" aria-label="关闭"></button>
       <div class="sbox"><div class="grabber"></div>
         <h2>配方向导</h2>
-        <div class="sheet-sub">傻瓜式学习开关恢复配方：切模式 → 自动比对 → 听声验证 → 入库</div>
+        <div class="sheet-sub">傻瓜式学习开关恢复配方：无线快照 → 直断试 → 切普通比对 → 听声验证 → 入库</div>
         ${body}
         ${footer ? `<div class="ft-btns">${footer}</div>` : ""}
       </div></div>`;
@@ -1607,7 +1619,8 @@ class MeshGuardPanel extends HTMLElement {
 
   _buildLearnQueue() {
     const L = this._learn;
-    const queue = [{ label: "直断法（无线模式下继电器直接通断）", entity: null, profile: { method: "direct" } }];
+    // 注意：diff1 的方向是「无线 → 普通」，因此 pair.new = 普通值、pair.old = 无线值
+    const queue = [];
     const prefix = L.relay.split(".", 1)[1].rsplit("_on_p_", 1)[0];
     const changed = (L.diff1 && L.diff1.changed) || [];
     for (const c of changed.filter((x) => x.domain === "select" && x.options && x.options.length)) {
@@ -1658,27 +1671,25 @@ class MeshGuardPanel extends HTMLElement {
     this._render();
   }
 
-  async _learnSnapshot() {
+  async _learnShotWireless() {
+    const L = this._learn;
     try {
-      await this._call({ type: `${DOMAIN}/learn_snapshot`, device_id: this._learn.deviceId });
-      this._learn.step = 1;
+      await this._call({ type: `${DOMAIN}/learn_snapshot`, device_id: L.deviceId });
+      L.queue = [{ label: "直断法（无线模式下继电器直接通断）", entity: null, profile: { method: "direct" } }];
+      L.qIdx = 0;
+      L.step = 2;
+      L.phase = "confirm";
       this._render();
     } catch (e) { this._toastMsg("快照失败：" + (e.message || e), "err"); }
   }
 
-  async _learnDiff(which) {
+  async _learnDiff() {
     try {
       const r = await this._call({ type: `${DOMAIN}/learn_diff`, device_id: this._learn.deviceId });
-      if (which === 1) {
-        this._learn.diff1 = r;
-        if (!r.changed || !r.changed.length) { this._toastMsg("没有检测到参数变化，请确认已切换模式", "err"); return; }
-        this._learn.step = 2;
-      } else {
-        this._learn.diff2 = r;
-        this._learn.queue = this._buildLearnQueue();
-        this._learn.qIdx = 0;
-        this._learn.step = 3;
-      }
+      this._learn.diff1 = r;
+      if (!r.changed || !r.changed.length) { this._toastMsg("没有检测到参数变化，请确认已切换模式", "err"); return; }
+      this._learn.queue = this._buildLearnQueue();
+      this._learn.qIdx = 0;
       this._render();
     } catch (e) { this._toastMsg("比对失败：" + (e.message || e), "err"); }
   }
@@ -1710,6 +1721,11 @@ class MeshGuardPanel extends HTMLElement {
       L.profile.tested = this._today();
       L.profile.tested_ok = true;
       L.phase = "done";
+    } else if (L.step === 2) {
+      // 直断法未通过 → 进入切普通比对
+      L.step = 3;
+      L.phase = "";
+      L.diff1 = null;
     } else {
       L.qIdx += 1;
       L.phase = L.qIdx >= L.queue.length ? "failed" : "confirm";
@@ -2269,12 +2285,20 @@ class MeshGuardPanel extends HTMLElement {
       "prof-test": () => this._openTest(id),
       "learn-open": () => this._openLearn(),
       "learn-close": () => { this._learn = null; this._render(); },
-      "learn-prev": () => { const L = this._learn; if (L.step > 0) L.step -= 1; this._render(); },
+      "learn-prev": () => {
+        const L = this._learn;
+        if (L.phase === "done" || L.phase === "failed") { this._learn = null; this._render(); return; }
+        if (L.step === 4) { L.step = 3; L.phase = ""; }
+        else if (L.step === 3) { L.step = 1; L.phase = ""; L.diff1 = null; }
+        else if (L.step === 2) { L.step = 1; L.phase = ""; }
+        else if (L.step === 1) { L.step = 0; }
+        this._render();
+      },
       "learn-dev": () => this._learnPickDevice(id),
       "learn-btn": () => this._learnPickButton(id),
-      "learn-next": () => this._learnSnapshot(),
-      "learn-shot2": () => this._learnDiff(1),
-      "learn-shot3": () => this._learnDiff(2),
+      "learn-next": () => { this._learn.step = 1; this._render(); },
+      "learn-shot1": () => this._learnShotWireless(),
+      "learn-shot2": () => this._learnDiff(),
       "learn-test": () => { this._learn.step = 4; this._learn.phase = "confirm"; this._render(); },
       "learn-exec": () => this._learnExec(),
       "learn-heard": () => this._learnHeard(t.dataset.v),
