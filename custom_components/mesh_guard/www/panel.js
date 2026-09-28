@@ -601,6 +601,8 @@ class MeshGuardPanel extends HTMLElement {
     this._customClasses = [];  // [{key,label}]
     this._clsMgr = false;      // 分类管理弹层
     this._prof = null;         // 配方编辑弹层
+    this._learn = null;        // 配方向导弹层
+    this._test = null;         // 听声测试弹层
     this._xiaomiMissing = false; // Xiaomi Home 集成缺失
     this._resetAsk = false;    // 危险区确认弹层
     this._wiz = null;        // 回路向导（新建/编辑）
@@ -760,7 +762,7 @@ class MeshGuardPanel extends HTMLElement {
   _maybeRender() {
     // 弹层（向导/配方/分类管理/确认框/流水）打开期间，推送仅静默更新数据；
     // 弹层关闭时各 close 路径会立即 _render，自然应用最新数据。
-    if (this._wiz || this._prof || this._clsMgr || this._cf || this._log || this._resetAsk) { this._dirty = true; return; }
+    if (this._wiz || this._prof || this._learn || this._test || this._clsMgr || this._cf || this._log || this._resetAsk) { this._dirty = true; return; }
     this._render();
   }
 
@@ -832,6 +834,8 @@ class MeshGuardPanel extends HTMLElement {
       ${this._log ? this._logSheet() : ""}
       ${this._clsMgr ? this._clsMgrSheet() : ""}
       ${this._prof ? this._profSheet() : ""}
+      ${this._learn ? this._learnSheet() : ""}
+      ${this._test ? this._testSheet() : ""}
       ${this._resetAsk ? this._resetSheet() : ""}
       ${this._cf ? this._cfSheet() : ""}`;
 
@@ -1391,12 +1395,13 @@ class MeshGuardPanel extends HTMLElement {
       }
       return `<div class="prow">
         <div class="pm">
-          <div class="pmodel mono">${esc(model)}</div>
+          <div class="pmodel mono">${esc(model)}${p.tested ? ` <span class="bd ${p.tested_ok ? "b-green" : "b-gray"}" style="margin-left:4px">🔊${p.tested_ok ? "通过" : "未过"} ${esc(p.tested)}</span>` : ""}</div>
           ${p.note ? `<div class="pnote">${esc(p.note)}</div>` : ""}
           <div class="pparams">${esc(params)}</div>
         </div>
         <span class="bd ${bd}" style="flex-shrink:0;margin-top:2px">${esc(lb)}</span>
         <div class="acts">
+          ${scope === "switch" ? `<button class="btn tint sm" data-act="prof-test" data-id="${esc(model)}" title="走到开关旁听继电器咔嗒声验证配方">${I.pulse} 测试</button>` : ""}
           <button class="btn gray sm" data-act="prof-edit" data-scope="${scope}" data-id="${esc(model)}">${I.edit}</button>
           <button class="btn red sm" data-act="prof-del" data-scope="${scope}" data-id="${esc(model)}">${I.trash}</button>
         </div>
@@ -1412,7 +1417,7 @@ class MeshGuardPanel extends HTMLElement {
         <div class="hint">同型号开关建的回路会自动继承这里的配方；现场「自动探型」习得的方法也会入库并注明来源回路。</div>
       </div>
       <div class="gt" as="div"><span>开关配方</span><span class="cnt">${Object.keys(sw).length}</span>
-        <span style="margin-left:auto"><button class="btn tint sm" data-act="prof-new" data-scope="switch">${I.plus} 新增配方</button></span>
+        <span style="margin-left:auto"><button class="btn tint sm" data-act="learn-open">${I.wand} 配方向导</button><button class="btn tint sm" data-act="prof-new" data-scope="switch">${I.plus} 新增配方</button></span>
       </div>
       <div class="card" style="padding-top:6px;padding-bottom:6px">
         ${Object.keys(sw).length ? rows(sw, "switch") : `<div class="empty" style="padding:24px 12px"><p style="margin:0">暂无开关配方</p></div>`}
@@ -1518,6 +1523,311 @@ class MeshGuardPanel extends HTMLElement {
       this._prof = null;
       await this._loadProfiles();
       this._toastMsg("配方已保存", "ok");
+    } catch (e) { this._toastMsg("保存失败：" + (e.message || e), "err"); }
+    this._render();
+  }
+
+  /* ---------------- 配方向导 + 听声测试 ---------------- */
+  _today() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  async _openLearn() {
+    if (!this._devices || !this._devices.length) { await this._scan(true); }
+    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
+    if (!devs.length) { this._toastMsg("没有扫描到带按键的开关设备，请先到设备页扫描", "err"); return; }
+    this._learn = { step: 0, deviceId: null, deviceLabel: "", model: "", buttons: [],
+      button: null, relay: null, modeEntity: null, btnLabel: "",
+      diff1: null, diff2: null, queue: [], qIdx: 0, phase: "",
+      profile: null, profileLabel: "", lastResult: null };
+    this._render();
+  }
+
+  _learnSheet() {
+    const L = this._learn;
+    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
+    let body = "";
+    let footer = "";
+    if (L.step === 0) {
+      body = `
+        <label class="f-lb">选择开关</label>
+        <div class="seg">${devs.map((d) => `<button data-act="learn-dev" data-id="${esc(d.device_id)}" class="${L.deviceId === d.device_id ? "on" : ""}">${esc(d.name || d.model || d.device_id)}</button>`).join("")}</div>
+        ${L.deviceId ? `<label class="f-lb">选择要学习的按键</label><div class="seg">${L.buttons.map((b) => `<button data-act="learn-btn" data-id="${b.index}" class="${L.button === b.index ? "on" : ""}">${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+      footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-next" ${L.button ? "" : "disabled"}>开始学习</button>`;
+    } else if (L.step === 1) {
+      body = `<div class="hint">✅ 已记录当前参数快照。<br><br>请打开米家 APP，把「${esc(L.deviceLabel)}」的「${esc(L.btnLabel)}」切换到<b>另一个模式</b>（现在是普通就切无线，是无线就切普通），切换完成后点下方按钮。</div>`;
+      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot2">已切换，比对变化</button>`;
+    } else if (L.step === 2) {
+      body = `<div class="hint">检测到以下参数变化：</div>${this._learnDiffRows(L.diff1)}<div class="hint">现在请把它<b>切回</b>原来的模式，切完点下方按钮。</div>`;
+      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-shot3">已切回，确认参数</button>`;
+    } else if (L.step === 3) {
+      body = `<div class="hint">✅ 切回后参数已复原确认。接下来用继电器声音自动筛选配方（每轮约 8 秒），请待在开关旁。</div>`;
+      footer = `<button class="btn gray" data-act="learn-prev">上一步</button><button class="btn" data-act="learn-test">开始听声验证</button>`;
+    } else if (L.step === 4) {
+      if (L.phase === "confirm") {
+        const t = L.queue[L.qIdx];
+        body = `<div class="hint">第 ${L.qIdx + 1}/${L.queue.length} 项测试：<b>${esc(t.label)}</b><br><br>请走到开关旁边，准备好听继电器「咔嗒」声，然后点下方按钮立即执行（断→通→断→通，两声咔嗒）。</div>`;
+        footer = `<button class="btn gray" data-act="learn-close">取消</button><button class="btn" data-act="learn-exec">我已就位，开始</button>`;
+      } else if (L.phase === "running") {
+        body = `<div class="hint"><span class="spin"></span> 正在执行继电器动作（约 8 秒）…</div>`;
+      } else if (L.phase === "asked") {
+        body = `<div class="hint">测试执行完成（继电器已复电、模式已还原）。<br><br><b>听到继电器咔嗒声了吗？</b></div>`;
+        footer = `<button class="btn gray" data-act="learn-heard" data-v="0">没听到</button><button class="btn" data-act="learn-heard" data-v="1">听到了</button>`;
+      } else if (L.phase === "done") {
+        body = `<div class="hint">🎉 已确定配方：<b>${esc(L.profileLabel)}</b><br><br>确认无误后保存入库，同型号开关的回路将自动继承。</div>`;
+        footer = `<button class="btn gray" data-act="learn-prev">重来</button><button class="btn" data-act="learn-save">${I.check} 保存配方</button>`;
+      } else if (L.phase === "failed") {
+        body = `<div class="hint">所有候选项都没听到继电器声音。可能该型号的继电器通断另有参数，建议用「新增配方」手工填写或联系支持。</div>`;
+        footer = `<button class="btn gray" data-act="learn-close">关闭</button>`;
+      }
+    }
+    return `<div class="sheet">
+      <button class="mask" data-act="learn-close" aria-label="关闭"></button>
+      <div class="sbox"><div class="grabber"></div>
+        <h2>配方向导</h2>
+        <div class="sheet-sub">傻瓜式学习开关恢复配方：切模式 → 自动比对 → 听声验证 → 入库</div>
+        ${body}
+        ${footer ? `<div class="ft-btns">${footer}</div>` : ""}
+      </div></div>`;
+  }
+
+  _learnDiffRows(diff) {
+    if (!diff || !diff.changed || !diff.changed.length) return `<div class="hint">没有检测到参数变化——请确认米家 APP 里确实切换了模式。</div>`;
+    return diff.changed.map((c) => {
+      let line;
+      if (c.domain === "select") line = `下拉框 ${esc(c.name || c.entity_id)}：${esc(c.old ?? "-")} → ${esc(c.new)}`;
+      else if (c.domain === "number") {
+        line = `参数 ${esc(c.name || c.entity_id)}：${c.old_hex ?? c.old ?? "-"} → ${c.new_hex ?? c.new}`;
+        if (c.changed_bytes && c.changed_bytes.length) line += `（变化字节：${c.changed_bytes.map((i) => i + 1).join("、")}）`;
+      } else line = `${esc(c.entity_id)}：${esc(c.old ?? "-")} → ${esc(c.new)}`;
+      return `<div class="mrow"><span class="bd b-orange mb">${c.domain === "select" ? "选项" : "数值"}</span><span class="mf">${line}</span></div>`;
+    }).join("");
+  }
+
+  _buildLearnQueue() {
+    const L = this._learn;
+    const queue = [{ label: "直断法（无线模式下继电器直接通断）", entity: null, profile: { method: "direct" } }];
+    const prefix = L.relay.split(".", 1)[1].rsplit("_on_p_", 1)[0];
+    const changed = (L.diff1 && L.diff1.changed) || [];
+    for (const c of changed.filter((x) => x.domain === "select" && x.options && x.options.length)) {
+      const normal = c.options.find((o) => String(o).includes("有线")) || c.new;
+      const wireless = c.options.find((o) => String(o).includes("无线") && !String(o).includes("有线")) || c.old;
+      if (normal && wireless && normal !== wireless) {
+        queue.push({ label: `模式切换法（${c.name || c.entity_id}）`, entity: c.entity_id,
+          profile: { method: "select", normal_option: normal, wireless_option: wireless } });
+      }
+    }
+    for (const c of changed.filter((x) => x.domain === "number")) {
+      const suffix = c.entity_id.split(".", 1)[1].substring(prefix.length + 1);
+      if ((c.changed_bytes || []).length === 1) {
+        const i = c.changed_bytes[0];
+        const pair = (c.byte_pairs || []).find((p) => p.index === i) || { old: 0, new: 0 };
+        queue.push({ label: `参数法·键字节（${c.name || c.entity_id}）`, entity: c.entity_id,
+          profile: { method: "number", buttons: { [String(L.button)]: suffix },
+                     byte_index: { [String(L.button)]: i },
+                     normal_byte: pair.new, wireless_byte: pair.old,
+                     verify_via: "number_readback" } });
+      } else {
+        queue.push({ label: `参数法·整值（${c.name || c.entity_id}）`, entity: c.entity_id,
+          profile: { method: "number", buttons: { [String(L.button)]: suffix },
+                     normal_value: parseInt(c.new, 10), wireless_value: parseInt(c.old, 10) } });
+      }
+    }
+    return queue;
+  }
+
+  _learnPickDevice(id) {
+    const d = (this._devices || []).find((x) => x.device_id === id);
+    if (!d) return;
+    this._learn.deviceId = id;
+    this._learn.deviceLabel = d.name || d.model || id;
+    this._learn.model = d.model || "";
+    this._learn.buttons = d.buttons || [];
+    this._learn.button = null;
+    this._render();
+  }
+
+  _learnPickButton(idx) {
+    const b = (this._learn.buttons || []).find((x) => String(x.index) === String(idx));
+    if (!b) return;
+    this._learn.button = Number(idx);
+    this._learn.relay = b.relay;
+    this._learn.modeEntity = b.mode_entity || null;
+    this._learn.btnLabel = b.label || `按键${idx}`;
+    this._render();
+  }
+
+  async _learnSnapshot() {
+    try {
+      await this._call({ type: `${DOMAIN}/learn_snapshot`, device_id: this._learn.deviceId });
+      this._learn.step = 1;
+      this._render();
+    } catch (e) { this._toastMsg("快照失败：" + (e.message || e), "err"); }
+  }
+
+  async _learnDiff(which) {
+    try {
+      const r = await this._call({ type: `${DOMAIN}/learn_diff`, device_id: this._learn.deviceId });
+      if (which === 1) {
+        this._learn.diff1 = r;
+        if (!r.changed || !r.changed.length) { this._toastMsg("没有检测到参数变化，请确认已切换模式", "err"); return; }
+        this._learn.step = 2;
+      } else {
+        this._learn.diff2 = r;
+        this._learn.queue = this._buildLearnQueue();
+        this._learn.qIdx = 0;
+        this._learn.step = 3;
+      }
+      this._render();
+    } catch (e) { this._toastMsg("比对失败：" + (e.message || e), "err"); }
+  }
+
+  async _learnExec() {
+    const L = this._learn;
+    L.phase = "running";
+    this._render();
+    const t = L.queue[L.qIdx];
+    try {
+      const r = await this._call({ type: `${DOMAIN}/recipe_test`,
+        profile: t.profile, relay_entity: L.relay,
+        mode_entity: t.entity || undefined, button: L.button });
+      L.lastResult = r.result;
+    } catch (e) { L.lastResult = { error: e.message || String(e) }; }
+    L.phase = "asked";
+    this._render();
+  }
+
+  async _learnHeard(v) {
+    const L = this._learn;
+    const t = L.queue[L.qIdx];
+    if (v === "1") {
+      L.profile = t.profile;
+      const m = t.profile.method;
+      L.profileLabel = m === "direct" ? "直断法"
+        : m === "select" ? `模式切换法（${t.profile.normal_option} / ${t.profile.wireless_option}）`
+        : t.profile.byte_index ? "参数法（键字节，自动学习）" : "参数法（整值，自动学习）";
+      L.profile.tested = this._today();
+      L.profile.tested_ok = true;
+      L.phase = "done";
+    } else {
+      L.qIdx += 1;
+      L.phase = L.qIdx >= L.queue.length ? "failed" : "confirm";
+    }
+    this._render();
+  }
+
+  async _learnSave() {
+    const L = this._learn;
+    if (!L.model) { this._toastMsg("设备无型号信息，无法入库", "err"); return; }
+    L.profile.note = `配方向导学习 + 听声验证通过 ${L.profile.tested}`;
+    try {
+      await this._call({ type: `${DOMAIN}/profile_set`, scope: "switch", model: L.model, profile: L.profile });
+      this._learn = null;
+      await this._loadProfiles();
+      this._toastMsg(`配方已入库：${L.model}`, "ok");
+    } catch (e) { this._toastMsg("保存失败：" + (e.message || e), "err"); this._render(); }
+  }
+
+  async _openTest(model) {
+    const p = (this._profiles && this._profiles.switch && this._profiles.switch[model]) || null;
+    if (!p) return;
+    if (!this._devices || !this._devices.length) { await this._scan(true); }
+    this._test = { model, profile: p, phase: "pick", deviceId: null, deviceLabel: "", buttons: [],
+      button: null, relay: null, modeEntity: null, btnLabel: "", result: null };
+    this._render();
+  }
+
+  _modeEntityForTest(profile, relay, idx, btnModeEntity) {
+    if (profile.method === "select") return btnModeEntity || null;
+    if (profile.method === "number") {
+      const suffix = (profile.buttons || {})[String(idx)];
+      if (suffix) {
+        const prefix = relay.split(".", 1)[1].rsplit("_on_p_", 1)[0];
+        return `number.${prefix}_${suffix}`;
+      }
+      return btnModeEntity || null;
+    }
+    return null;
+  }
+
+  _testPickDevice(id) {
+    const T = this._test;
+    const d = (this._devices || []).find((x) => x.device_id === id);
+    if (!d) return;
+    T.deviceId = id;
+    T.deviceLabel = d.name || d.model || id;
+    T.buttons = d.buttons || [];
+    T.button = null;
+    this._render();
+  }
+
+  _testPickButton(idx) {
+    const T = this._test;
+    const b = (T.buttons || []).find((x) => String(x.index) === String(idx));
+    if (!b) return;
+    T.button = Number(idx);
+    T.relay = b.relay;
+    T.btnLabel = b.label || `按键${idx}`;
+    T.modeEntity = this._modeEntityForTest(T.profile, b.relay, Number(idx), b.mode_entity || null);
+    this._render();
+  }
+
+  _testSheet() {
+    const T = this._test;
+    const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
+    let body = "";
+    let footer = "";
+    if (T.phase === "pick") {
+      body = `
+        <label class="f-lb">测试配方：${esc(T.model)}（${esc(METHOD_LABEL[T.profile.method] || T.profile.method || "未知")}）</label>
+        <label class="f-lb">选择该型号的一台开关</label>
+        <div class="seg">${devs.map((d) => `<button data-act="test-dev" data-id="${esc(d.device_id)}" class="${T.deviceId === d.device_id ? "on" : ""}">${esc(d.name || d.model || d.device_id)}</button>`).join("")}</div>
+        ${T.deviceId ? `<label class="f-lb">选择按键</label><div class="seg">${T.buttons.map((b) => `<button data-act="test-btn" data-id="${b.index}" class="${T.button === b.index ? "on" : ""}">${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+      footer = `<button class="btn gray" data-act="test-close">取消</button><button class="btn" data-act="test-confirm" ${T.button ? "" : "disabled"}>下一步</button>`;
+    } else if (T.phase === "confirm") {
+      body = `<div class="hint">将执行：${T.profile.method === "direct" ? "直接 断→通→断→通" : "切普通 → 断→通→断→通 → 还原无线"}<br><br>请<b>走到开关旁边</b>，准备好听继电器「咔嗒」声（两声），点击后立即执行。</div>`;
+      footer = `<button class="btn gray" data-act="test-close">取消</button><button class="btn" data-act="test-exec">我已就位，开始</button>`;
+    } else if (T.phase === "running") {
+      body = `<div class="hint"><span class="spin"></span> 正在执行（约 8 秒）…</div>`;
+    } else if (T.phase === "asked") {
+      body = `<div class="hint">执行完成（继电器已复电、模式已还原）。<br><br><b>听到继电器咔嗒声了吗？</b></div>`;
+      footer = `<button class="btn gray" data-act="test-heard" data-v="0">没听到</button><button class="btn" data-act="test-heard" data-v="1">听到了</button>`;
+    }
+    return `<div class="sheet">
+      <button class="mask" data-act="test-close" aria-label="关闭"></button>
+      <div class="sbox"><div class="grabber"></div>
+        <h2>听声测试</h2>
+        <div class="sheet-sub">以继电器咔嗒声验证配方（约 8 秒，不依赖灯具掉线）</div>
+        ${body}
+        ${footer ? `<div class="ft-btns">${footer}</div>` : ""}
+      </div></div>`;
+  }
+
+  async _testExec() {
+    const T = this._test;
+    T.phase = "running";
+    this._render();
+    try {
+      const r = await this._call({ type: `${DOMAIN}/recipe_test`,
+        profile: T.profile, relay_entity: T.relay,
+        mode_entity: T.modeEntity || undefined, button: T.button });
+      T.result = r.result;
+    } catch (e) { T.result = { error: e.message || String(e) }; }
+    T.phase = "asked";
+    this._render();
+  }
+
+  async _testHeard(v) {
+    const T = this._test;
+    const p = { ...(T.profile || {}) };
+    p.tested = this._today();
+    p.tested_ok = v === "1";
+    try {
+      await this._call({ type: `${DOMAIN}/profile_set`, scope: "switch", model: T.model, profile: p });
+      this._test = null;
+      await this._loadProfiles();
+      this._toastMsg(v === "1" ? "听声验证通过 ✅ 已记入配方" : "已记录为未通过", v === "1" ? "ok" : "err");
     } catch (e) { this._toastMsg("保存失败：" + (e.message || e), "err"); }
     this._render();
   }
@@ -1956,6 +2266,25 @@ class MeshGuardPanel extends HTMLElement {
       "prof-edit": () => this._openProf(t.dataset.scope, id),
       "prof-close": () => { this._prof = null; this._render(); },
       "prof-save": () => this._saveProf(),
+      "prof-test": () => this._openTest(id),
+      "learn-open": () => this._openLearn(),
+      "learn-close": () => { this._learn = null; this._render(); },
+      "learn-prev": () => { const L = this._learn; if (L.step > 0) L.step -= 1; this._render(); },
+      "learn-dev": () => this._learnPickDevice(id),
+      "learn-btn": () => this._learnPickButton(id),
+      "learn-next": () => this._learnSnapshot(),
+      "learn-shot2": () => this._learnDiff(1),
+      "learn-shot3": () => this._learnDiff(2),
+      "learn-test": () => { this._learn.step = 4; this._learn.phase = "confirm"; this._render(); },
+      "learn-exec": () => this._learnExec(),
+      "learn-heard": () => this._learnHeard(t.dataset.v),
+      "learn-save": () => this._learnSave(),
+      "test-close": () => { this._test = null; this._render(); },
+      "test-dev": () => this._testPickDevice(id),
+      "test-btn": () => this._testPickButton(id),
+      "test-confirm": () => { this._test.phase = "confirm"; this._render(); },
+      "test-exec": () => this._testExec(),
+      "test-heard": () => this._testHeard(t.dataset.v),
       "prof-del": async () => {
         const ok = await this._confirm({ title: `删除配方「${id}」？`, body: "同型号开关的回路将回退为「未探型」。", okText: "删除", danger: true });
         if (!ok) return;
