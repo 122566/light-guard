@@ -1578,8 +1578,8 @@ class MeshGuardPanel extends HTMLElement {
           <span class="mt">${esc(d.model || "")}</span>
           <span class="chev">${I.chevD}</span>
         </button>
-        ${on ? `<div class="lr-keys">${(d.buttons || []).map((b) =>
-          `<button class="chip-b xs${sel.button === b.index ? " on" : ""}" data-act="${prefix}-btn" data-id="${b.index}">按键${b.index} · ${esc(b.label)}</button>`).join("")}</div>` : ""}`;
+        <div class="lr-keys" data-keys="${esc(d.device_id)}" style="${on ? "" : "display:none"}">${(d.buttons || []).map((b) =>
+          `<button class="chip-b xs${sel.button === b.index ? " on" : ""}" data-act="${prefix}-btn" data-id="${b.index}">按键${b.index} · ${esc(b.label)}</button>`).join("")}</div>`;
       }).join("")}`).join("");
   }
 
@@ -1652,11 +1652,19 @@ class MeshGuardPanel extends HTMLElement {
     }).join("");
   }
 
+  _entityPrefix(relay) {
+    // "switch.<前缀>_on_p_<siid>_1" → "<前缀>"（等价 Python 的 rsplit("_on_p_",1)[0]）
+    const body = (relay || "").split(".")[1] || "";
+    const idx = body.lastIndexOf("_on_p_");
+    return idx >= 0 ? body.substring(0, idx) : body;
+  }
+
   _buildLearnQueue() {
     const L = this._learn;
     // 注意：diff1 的方向是「无线 → 普通」，因此 pair.new = 普通值、pair.old = 无线值
     const queue = [];
-    const prefix = L.relay.split(".", 1)[1].rsplit("_on_p_", 1)[0];
+    if (!L.relay) { this._toastMsg("未找到该按键的继电器实体，无法生成候选配方", "err"); return []; }
+    const prefix = this._entityPrefix(L.relay);
     const changed = (L.diff1 && L.diff1.changed) || [];
     for (const c of changed.filter((x) => x.domain === "select" && x.options && x.options.length)) {
       const normal = c.options.find((o) => String(o).includes("有线")) || c.new;
@@ -1667,7 +1675,7 @@ class MeshGuardPanel extends HTMLElement {
       }
     }
     for (const c of changed.filter((x) => x.domain === "number")) {
-      const suffix = c.entity_id.split(".", 1)[1].substring(prefix.length + 1);
+      const suffix = c.entity_id.split(".")[1].substring(prefix.length + 1);
       if ((c.changed_bytes || []).length === 1) {
         const i = c.changed_bytes[0];
         const pair = (c.byte_pairs || []).find((p) => p.index === i) || { old: 0, new: 0 };
@@ -1685,15 +1693,26 @@ class MeshGuardPanel extends HTMLElement {
     return queue;
   }
 
+  _syncPickFooter(act, enabled) {
+    const btn = this.shadowRoot.querySelector(`[data-act="${act}"]`);
+    if (btn) btn.disabled = !enabled;
+  }
+
   _learnPickDevice(id) {
     const d = (this._devices || []).find((x) => x.device_id === id);
     if (!d) return;
-    this._learn.deviceId = id;
-    this._learn.deviceLabel = d.name || d.model || id;
-    this._learn.model = d.model || "";
-    this._learn.buttons = d.buttons || [];
-    this._learn.button = null;
-    this._render();
+    const L = this._learn;
+    L.deviceId = id;
+    L.deviceLabel = d.name || d.model || id;
+    L.model = d.model || "";
+    L.buttons = d.buttons || [];
+    L.button = null;
+    L.relay = null;
+    // 局部更新：只切换行高亮与按键显隐，不整页重绘（避免滚动回跳）
+    this.shadowRoot.querySelectorAll('[data-act="learn-dev"]').forEach((n) => n.classList.toggle("on", n.dataset.id === id));
+    this.shadowRoot.querySelectorAll("[data-keys]").forEach((n) => { n.style.display = n.dataset.keys === id ? "" : "none"; });
+    this.shadowRoot.querySelectorAll('[data-act="learn-btn"]').forEach((n) => n.classList.remove("on"));
+    this._syncPickFooter("learn-next", false);
   }
 
   _learnPickButton(idx) {
@@ -1703,7 +1722,8 @@ class MeshGuardPanel extends HTMLElement {
     this._learn.relay = b.relay;
     this._learn.modeEntity = b.mode_entity || null;
     this._learn.btnLabel = b.label || `按键${idx}`;
-    this._render();
+    this.shadowRoot.querySelectorAll('[data-act="learn-btn"]').forEach((n) => n.classList.toggle("on", String(n.dataset.id) === String(idx)));
+    this._syncPickFooter("learn-next", true);
   }
 
   async _learnShotWireless() {
@@ -1724,6 +1744,7 @@ class MeshGuardPanel extends HTMLElement {
       this._learn.diff1 = r;
       if (!r.changed || !r.changed.length) { this._toastMsg("没有检测到参数变化，请确认已切换模式", "err"); return; }
       this._learn.queue = this._buildLearnQueue();
+      if (!this._learn.queue.length) { this._toastMsg("没有生成可用候选，请重试或联系支持", "err"); return; }
       this._learn.qIdx = 0;
       this._render();
     } catch (e) { this._toastMsg("比对失败：" + (e.message || e), "err"); }
@@ -1794,7 +1815,7 @@ class MeshGuardPanel extends HTMLElement {
     if (profile.method === "number") {
       const suffix = (profile.buttons || {})[String(idx)];
       if (suffix) {
-        const prefix = relay.split(".", 1)[1].rsplit("_on_p_", 1)[0];
+        const prefix = this._entityPrefix(relay);
         return `number.${prefix}_${suffix}`;
       }
       return btnModeEntity || null;
@@ -1810,7 +1831,11 @@ class MeshGuardPanel extends HTMLElement {
     T.deviceLabel = d.name || d.model || id;
     T.buttons = d.buttons || [];
     T.button = null;
-    this._render();
+    T.relay = null;
+    this.shadowRoot.querySelectorAll('[data-act="test-dev"]').forEach((n) => n.classList.toggle("on", n.dataset.id === id));
+    this.shadowRoot.querySelectorAll("[data-keys]").forEach((n) => { n.style.display = n.dataset.keys === id ? "" : "none"; });
+    this.shadowRoot.querySelectorAll('[data-act="test-btn"]').forEach((n) => n.classList.remove("on"));
+    this._syncPickFooter("test-confirm", false);
   }
 
   _testPickButton(idx) {
@@ -1821,7 +1846,8 @@ class MeshGuardPanel extends HTMLElement {
     T.relay = b.relay;
     T.btnLabel = b.label || `按键${idx}`;
     T.modeEntity = this._modeEntityForTest(T.profile, b.relay, Number(idx), b.mode_entity || null);
-    this._render();
+    this.shadowRoot.querySelectorAll('[data-act="test-btn"]').forEach((n) => n.classList.toggle("on", String(n.dataset.id) === String(idx)));
+    this._syncPickFooter("test-confirm", true);
   }
 
   _testSheet() {
