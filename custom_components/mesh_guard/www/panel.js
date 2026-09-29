@@ -1409,7 +1409,7 @@ class MeshGuardPanel extends HTMLElement {
       }
       return `<div class="prow">
         <div class="pm">
-          <div class="pmodel mono">${esc(model)}${p.tested ? ` <span class="bd ${p.tested_ok ? "b-green" : "b-gray"}" style="margin-left:4px">🔊${p.tested_ok ? "通过" : "未过"} ${esc(p.tested)}</span>` : ""}</div>
+          <div class="pmodel mono">${esc(model)}${p.alias ? ` <span class="bd b-blue" style="margin-left:4px">${esc(p.alias)}</span>` : ""}${p.tested ? ` <span class="bd ${p.tested_ok ? "b-green" : "b-gray"}" style="margin-left:4px">🔊${p.tested_ok ? "通过" : "未过"} ${esc(p.tested)}</span>` : ""}</div>
           ${p.note ? `<div class="pnote">${esc(p.note)}</div>` : ""}
           <div class="pparams">${esc(params)}</div>
         </div>
@@ -1449,6 +1449,7 @@ class MeshGuardPanel extends HTMLElement {
     this._prof = {
       scope, editModel: model || null,
       model: model || "", method: exist?.method || "direct",
+      alias: exist?.alias ?? "",
       normal_option: exist?.normal_option ?? "", wireless_option: exist?.wireless_option ?? "",
       normal_value: exist?.normal_value ?? "", wireless_value: exist?.wireless_value ?? "",
       byte_index: exist?.byte_index ? JSON.stringify(exist.byte_index) : "",
@@ -1470,6 +1471,7 @@ class MeshGuardPanel extends HTMLElement {
     if (isSw) {
       body = `
         ${fld("model", "开关型号", "如 090615.switch.aikw3")}
+        ${fld("alias", "商品名（可选，方便区分）", "如 玄关八开P1")}
         <label class="f-lb">恢复方法</label>
         <div class="seg">
           ${[["direct", "直断法"], ["select", "模式切换法"], ["number", "参数法"]].map(([m, lb]) =>
@@ -1532,6 +1534,7 @@ class MeshGuardPanel extends HTMLElement {
         modes: { "断电记忆": p.m1, "来电开灯": p.m2, "来电关灯": p.m3 } };
     }
     if (p.note) profile.note = p.note;
+    if ((p.alias || "").trim()) profile.alias = p.alias.trim();
     try {
       await this._call({ type: `${DOMAIN}/profile_set`, scope: p.scope, model: p.model, profile });
       this._prof = null;
@@ -1559,15 +1562,27 @@ class MeshGuardPanel extends HTMLElement {
   }
 
   _devPickerHtml(sel, prefix) {
+    return `<input class="inp" data-psearch="${prefix}" placeholder="搜索开关（模糊：输入名称里的任意字，如「玄」）" value="${esc(sel.search || "")}" style="margin:10px 0 4px">
+      <div data-pwrap="${prefix}">${this._devPickerBody(sel, prefix)}</div>`;
+  }
+
+  _devPickerBody(sel, prefix) {
+    const q = (sel.search || "").trim().toLowerCase();
     const devs = (this._devices || []).filter((d) => d.buttons && d.buttons.length);
     const rooms = {};
     for (const d of devs) {
+      if (q) {
+        const hay = `${d.name || ""} ${d.model || ""}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
       const r = d.area_name || "未分配房间";
       (rooms[r] = rooms[r] || []).push(d);
     }
     const names = Object.keys(rooms).sort((a, b) =>
       (a === "未分配房间") - (b === "未分配房间") || a.localeCompare(b, "zh-Hans-CN"));
-    if (!names.length) return `<div class="hint">没有扫描到带按键的开关设备，请先到设备页扫描。</div>`;
+    if (!names.length) return q
+      ? `<div class="hint">没有匹配「${esc(sel.search)}」的开关</div>`
+      : `<div class="hint">没有扫描到带按键的开关设备，请先到设备页扫描。</div>`;
     return names.map((r) => `
       <div class="lr-room">${esc(r)}<span class="cnt">${rooms[r].length}</span></div>
       ${rooms[r].map((d) => {
@@ -2433,6 +2448,14 @@ class MeshGuardPanel extends HTMLElement {
       this._search = t.value;
       const w = this.shadowRoot.querySelector("#devwrap");
       if (w) w.innerHTML = this._devGroups();
+      return;
+    }
+    if (t.dataset.psearch !== undefined) {
+      const sel = t.dataset.psearch === "learn" ? this._learn : this._test;
+      if (!sel) return;
+      sel.search = t.value;
+      const w = this.shadowRoot.querySelector(`[data-pwrap="${t.dataset.psearch}"]`);
+      if (w) w.innerHTML = this._devPickerBody(sel, t.dataset.psearch);
       return;
     }
     if (t.dataset.k === "wizname" && this._wiz) { this._wiz.name = t.value; this._wiz.nameDirty = true; return; }
