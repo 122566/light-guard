@@ -1881,6 +1881,12 @@ class MeshGuardPanel extends HTMLElement {
     } else if (T.phase === "asked") {
       body = `<div class="hint">执行完成（继电器已复电、模式已还原）。<br><br><b>听到继电器咔嗒声了吗？</b></div>`;
       footer = `<button class="btn gray" data-act="test-heard" data-v="0">没听到</button><button class="btn" data-act="test-heard" data-v="1">听到了</button>`;
+    } else if (T.phase === "passed") {
+      body = `<div class="hint">✅ 听声验证通过，已记入配方（${esc(T.model)}）。</div>`;
+      footer = `<button class="btn" data-act="test-close">完成</button>`;
+    } else if (T.phase === "failed") {
+      body = `<div class="hint">❌ 未听到继电器声音——该配方对这台开关可能无效（也可能当前不在普通模式）。<br><br>建议用<b>配方向导</b>重新学习这台开关的正确配方（自动逐个试直断/模式切换/参数法）。</div>`;
+      footer = `<button class="btn gray" data-act="test-close">关闭</button><button class="btn" data-act="test-learn">${I.wand} 配方向导重新学习</button>`;
     }
     return `<div class="sheet">
       <button class="mask" data-act="test-close" aria-label="关闭"></button>
@@ -1913,10 +1919,26 @@ class MeshGuardPanel extends HTMLElement {
     p.tested_ok = v === "1";
     try {
       await this._call({ type: `${DOMAIN}/profile_set`, scope: "switch", model: T.model, profile: p });
-      this._test = null;
-      await this._loadProfiles();
-      this._toastMsg(v === "1" ? "听声验证通过 ✅ 已记入配方" : "已记录为未通过", v === "1" ? "ok" : "err");
-    } catch (e) { this._toastMsg("保存失败：" + (e.message || e), "err"); }
+      if (this._profiles && this._profiles.switch) this._profiles.switch[T.model] = p;
+    } catch (e) { this._toastMsg("记录失败：" + (e.message || e), "err"); }
+    T.phase = v === "1" ? "passed" : "failed";
+    this._render();
+  }
+
+  async _testToLearn() {
+    const T = this._test;
+    const dev = (this._devices || []).find((x) => x.device_id === T.deviceId);
+    this._test = null;
+    this._learn = {
+      step: 3, phase: "", diff1: null, queue: [], qIdx: 0,
+      deviceId: T.deviceId, deviceLabel: T.deviceLabel,
+      model: dev ? (dev.model || "") : "",
+      buttons: T.buttons, button: T.button, relay: T.relay,
+      modeEntity: T.modeEntity, btnLabel: T.btnLabel,
+      profile: null, profileLabel: "", lastResult: null,
+    };
+    // 记录当前（无线）快照，供切普通后 diff 比对使用
+    try { await this._call({ type: `${DOMAIN}/learn_snapshot`, device_id: T.deviceId }); } catch (_) {}
     this._render();
   }
 
@@ -2381,6 +2403,7 @@ class MeshGuardPanel extends HTMLElement {
       "test-confirm": () => { this._test.phase = "confirm"; this._render(); },
       "test-exec": () => this._testExec(),
       "test-heard": () => this._testHeard(t.dataset.v),
+      "test-learn": () => this._testToLearn(),
       "prof-del": async () => {
         const ok = await this._confirm({ title: `删除配方「${id}」？`, body: "同型号开关的回路将回退为「未探型」。", okText: "删除", danger: true });
         if (!ok) return;
