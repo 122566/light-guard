@@ -592,7 +592,7 @@ class MeshGuardPanel extends HTMLElement {
   constructor() {
     super();
     this._tab = "dash";
-    this._devices = null;
+    this._devices = null; this._scanMeta = null;
     this._circuits = null;
     this._scheduler = null;
     this._history = [];
@@ -744,7 +744,7 @@ class MeshGuardPanel extends HTMLElement {
     this._scanning = true; if (!silent) this._render(); else this._render();
     try {
       const r = await this._call({ type: `${DOMAIN}/scan` });
-      this._devices = r.devices || [];
+      this._devices = r.devices || []; this._scanMeta = r.meta || null;
     } catch (e) { this._toastMsg("扫描失败：" + (e.message || e), "err"); }
     this._scanning = false; this._render();
   }
@@ -1106,7 +1106,7 @@ class MeshGuardPanel extends HTMLElement {
     const B = this._xmBanner();
     if (this._scanning && !this._devices) {
       return `${B}<div class="card empty"><div class="eic"><span class="spin" style="width:26px;height:26px;border-width:3px"></span></div>
-        <h4>正在扫描设备</h4><p style="margin-bottom:0">从 xiaomi_home 拉取全部 BLE Mesh 设备并自动分类…</p></div>`;
+        <h4>正在扫描设备</h4><p style="margin-bottom:0">从 Xiaomi Home / Xiaomi Miot Auto 拉取全部 BLE Mesh 设备并自动分类…</p></div>`;
     }
     if (!this._devices) {
       return `${B}<div class="card empty">
@@ -1163,8 +1163,14 @@ class MeshGuardPanel extends HTMLElement {
   _devGroups() {
     const q = this._search.trim().toLowerCase();
     if (!q && this._clsFilter === "all" && !(this._devices || []).length) {
+      let diag = "";
+      const m = this._scanMeta;
+      if (m) {
+        const es = (m.entries || []).map((e) => `${e.domain}「${e.title}」`).join("、") || "无";
+        diag = `<p style="margin:6px 0 0;font-size:12.5px;color:var(--text2)">已检查集成：${esc(m.domains_checked.join(" / "))}；现有条目：${esc(es)}；其中 BLE Mesh 设备 ${m.devices_total} 台</p>`;
+      }
       return `<div class="card empty"><div class="eic">${I.search}</div><h4>没有扫描到设备</h4>
-        <p style="margin-bottom:0">请确认 xiaomi_home 集成已接入米家 BLE Mesh 设备，然后重新扫描。</p></div>`;
+        <p style="margin-bottom:0">请确认 Xiaomi Home / Xiaomi Miot Auto 集成已接入米家 BLE Mesh 设备，然后重新扫描。</p>${diag}</div>`;
     }
     const rooms = {};
     for (const d of this._devices || []) {
@@ -2041,7 +2047,7 @@ class MeshGuardPanel extends HTMLElement {
     try {
       await this._call({ type: `${DOMAIN}/reset_all` });
       this._resetAsk = false;
-      this._circuits = null; this._devices = null; this._history = [];
+      this._circuits = null; this._devices = null; this._scanMeta = null; this._history = [];
       this._settings = null; this._wins = null; this._setDraft = {};
       this._doneCards = {}; this._dismissed = new Set(); this._tasksInit = false;
       this._profiles = null; this._lamps = null; this._lampSel = new Set();
