@@ -1027,6 +1027,7 @@ class MeshGuardPanel extends HTMLElement {
         </div>
         <div class="acts" style="justify-content:flex-start;margin-top:12px">
           ${rtBadge}${rtStop}
+          ${state === "repairing" ? `<button class="btn sm red" data-act="repair-cancel" data-id="${esc(c.id)}">${I.x} 取消修复</button>` : ""}
           <button class="btn sm" data-act="repair" data-id="${esc(c.id)}" ${state === "repairing" || rt ? "disabled" : ""}>${I.wrench} 立即修复</button>
           <button class="btn sm tint" data-act="verify" data-id="${esc(c.id)}" ${rt ? "disabled" : ""}>${I.pulse} 验证通断</button>
           <button class="btn sm gray" data-act="edit" data-id="${esc(c.id)}">${I.edit} 编辑</button>
@@ -2349,6 +2350,7 @@ class MeshGuardPanel extends HTMLElement {
         this._wizCountSync();
       },
       "repair": () => this._repair(id),
+      "repair-cancel": () => this._repairCancel(id),
       "verify": () => this._verify(id),
       "probe": () => this._probe(id),
       "task-stop": async () => {
@@ -2544,6 +2546,23 @@ class MeshGuardPanel extends HTMLElement {
       c.urgent = val;
       this._toastMsg(val ? "已开启随时修复" : "已关闭随时修复", "ok");
     } catch (e) { this._toastMsg("保存失败：" + (e.message || e), "err"); }
+    this._render();
+  }
+
+  async _repairCancel(id) {
+    const c = (this._circuits || []).find((x) => x.id === id);
+    if (!c) return;
+    const ok = await this._confirm({
+      title: `取消修复「${c.name}」？`,
+      body: "取消后继电器会兜底复电、模式还原，该回路恢复为正常状态，可自行手动操作。",
+      okText: "取消修复", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await this._call({ type: `${DOMAIN}/repair_cancel`, circuit_id: id });
+      this._toastMsg("修复已取消", "ok");
+    } catch (e) { this._toastMsg("取消失败：" + (e.message || e), "err"); }
+    await this._loadStatus();
     this._render();
   }
 
