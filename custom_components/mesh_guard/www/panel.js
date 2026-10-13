@@ -618,7 +618,7 @@ class MeshGuardPanel extends HTMLElement {
     this._learn = null;        // 配方向导弹层
     this._test = null;         // 听声测试弹层
     this._xiaomiMissing = false; // Xiaomi Home 集成缺失
-    this._resetAsk = false;    // 危险区确认弹层
+    this._resetAsk = false; this._logs = null;    // 危险区确认弹层
     this._wiz = null;        // 回路向导（新建/编辑）
     this._log = null;        // 修复执行流水
     this._cf = null;         // 确认框
@@ -2012,11 +2012,66 @@ class MeshGuardPanel extends HTMLElement {
         ${tm("cooldown", "修复冷却", "同一回路两次自动修复之间的最小间隔", "秒")}
       </div>
       <button class="btn block" data-act="saveset">保存设置</button>
+      <div class="card" style="margin-top:16px">
+        <h3>运行日志</h3>
+        <div class="hint" style="margin:0 0 10px">记录扫描、修复、异常等运行过程，用于问题排查。日志条数上限 800，超出自动滚动丢弃。</div>
+        <div class="acts" style="justify-content:flex-start">
+          <button class="btn sm" data-act="logs-reload">${I.refresh} 刷新</button>
+          <button class="btn sm tint" data-act="logs-download">${I.copy} 下载日志</button>
+          <button class="btn sm red" data-act="logs-clear">${I.trash} 清空日志</button>
+        </div>
+        <div id="logwrap" style="margin-top:10px">${this._logsView()}</div>
+      </div>
       <div class="card danger" style="margin-top:16px">
         <h3>危险区</h3>
         <div class="hint" style="margin:0 0 12px">把集成还原到默认状态。授权码、站点名称、企业微信 Webhook 与配方库会保留。</div>
         <button class="btn redsolid" data-act="reset-open">${I.alert} 还原所有设置</button>
       </div>`;
+  }
+
+  _logsView() {
+    if (!this._logs) return `<div class="hint" style="margin:0">点击「刷新」加载日志。</div>`;
+    const logs = this._logs || [];
+    if (!logs.length) return `<div class="hint" style="margin:0">暂无日志。</div>`;
+    const tail = logs.slice(-60);
+    return `<div style="max-height:320px;overflow-y:auto;border-radius:12px;background:var(--card2);padding:10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.7">${
+      tail.map((l) => `<div style="display:flex;gap:8px"><span style="color:var(--text3);flex-shrink:0">${esc(l.ts)}</span><span class="${l.level === "error" ? "mono" : ""}" style="${l.level === "error" ? "color:var(--red);word-break:break-all" : l.level === "warn" ? "color:var(--orange);word-break:break-all" : "color:var(--text2);word-break:break-all"}">${esc(l.msg)}</span></div>`).join("")
+    }${logs.length > 60 ? `<div class="hint" style="margin:6px 0 0">共 ${logs.length} 条，仅显示最近 60 条。</div>` : ""}</div>`;
+  }
+
+  async _logsLoad() {
+    try {
+      const r = await this._call({ type: `${DOMAIN}/get_logs` });
+      this._logs = r.logs || [];
+    } catch (e) { this._toastMsg("日志加载失败：" + (e.message || e), "err"); }
+    const w = this.shadowRoot.querySelector("#logwrap");
+    if (w) w.innerHTML = this._logsView(); else this._render();
+  }
+
+  async _logsDownload() {
+    if (!this._logs) await this._logsLoad();
+    const lines = (this._logs || []).map((l) => `[${l.ts}] [${l.level}] ${l.msg}`);
+    const text = `mesh_guard 运行日志\n导出时间：${new Date().toLocaleString()}\n设备ID：${this._settings?.device_fingerprint || ""}\n\n` + lines.join("\n") + "\n";
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `mesh_guard_log_${Date.now()}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }
+
+  async _logsClear() {
+    const ok1 = await this._confirm({ title: "清空运行日志？", body: "日志将全部删除，用于释放存储空间。", okText: "继续", danger: true });
+    if (!ok1) return;
+    const ok2 = await this._confirm({ title: "再次确认清空日志", body: "此操作不可恢复，确定要删除全部运行日志吗？", okText: "确认清空", danger: true });
+    if (!ok2) return;
+    try {
+      await this._call({ type: `${DOMAIN}/clear_logs` });
+      this._logs = [];
+      this._toastMsg("日志已清空", "ok");
+    } catch (e) { this._toastMsg("清空失败：" + (e.message || e), "err"); }
+    const w = this.shadowRoot.querySelector("#logwrap");
+    if (w) w.innerHTML = this._logsView(); else this._render();
   }
 
   _resetSheet() {
@@ -2047,7 +2102,7 @@ class MeshGuardPanel extends HTMLElement {
   async _doReset() {
     try {
       await this._call({ type: `${DOMAIN}/reset_all` });
-      this._resetAsk = false;
+      this._resetAsk = false; this._logs = null;
       this._circuits = null; this._devices = null; this._scanMeta = null; this._history = [];
       this._settings = null; this._wins = null; this._setDraft = {};
       this._doneCards = {}; this._dismissed = new Set(); this._tasksInit = false;
@@ -2365,6 +2420,9 @@ class MeshGuardPanel extends HTMLElement {
       "dcard": () => { delete this._doneCards[id]; this._render(); },
       "clsmgr-open": () => { this._clsMgr = true; this._render(); },
       "clsmgr-close": () => { this._clsMgr = false; this._render(); },
+      "logs-reload": () => this._logsLoad(),
+      "logs-download": () => this._logsDownload(),
+      "logs-clear": () => this._logsClear(),
       "cls-add": () => {
         const inp = this.shadowRoot.querySelector('[data-k="clsnew"]');
         const label = (inp?.value || "").trim();
@@ -2455,7 +2513,7 @@ class MeshGuardPanel extends HTMLElement {
         } else if (!this._copyFallback(v)) fail();
       },
       "reset-open": () => { this._resetAsk = true; this._render(); },
-      "reset-close": () => { this._resetAsk = false; this._render(); },
+      "reset-close": () => { this._resetAsk = false; this._logs = null; this._render(); },
       "reset-go": () => this._doReset(),
     };
     if (A[act]) return A[act]();
